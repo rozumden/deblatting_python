@@ -50,23 +50,31 @@ def estimateH_motion(I, B, F, M, Hmask=None, H=None):
 		## 'v_lp' minimization
 		if params.lp != 2 and params.beta_lp > 0 and params.alpha > 0: # eliminates L2
 			v_lp = H + a_lp
-			## Lp
 			if params.lp == 1:
 				temp = v_lp < params.alpha/params.beta_lp
-				v_lp[temp] = 0 # also forces positivity
+				v_lp[temp] = 0 
 				v_lp[~temp] -= params.alpha/params.beta_lp
 			elif params.lp == .5:
-				## see eg "Computing the proximity operator of the lp norm..., Chen et al, IET Signal processing, 2016"
 				temp = v_lp <= 3/2*(params.alpha/params.beta_lp)**(2/3)
-				v_lp[temp] = 0 # also forces positivity
+				v_lp[temp] = 0
 				v_lp[~temp] = 2/3*v_lp[~temp]*(1+np.cos(2/3*np.acos(-3**(3/2)/4*params.alpha/params.beta_lp*v_lp[~temp]**(-3/2))))
 			elif params.lp == 0:
-				v_lp[v_lp <= sqrt(2*params.alpha/params.beta_lp)] = 0 # also forces positivity
-
-			## 'a' step
+				v_lp[v_lp <= sqrt(2*params.alpha/params.beta_lp)] = 0
 			a_lp = a_lp + H - v_lp
 
-			pdb.set_trace()
+		## 'v_pos' minimization
+		if params.beta_pos > 0:
+			v_pos = H + a_pos
+			v_pos[v_pos < 0] = 0 ## infinity penalty for negative 'h' values
+			v_pos[v_pos > 1] = 1 ## infinity penalty for 'h' values over 1 
+			a_pos = a_pos + h - v_pos;
+		
+		## 'h' minimization
+		rhs = rhs_const + params.beta_pos*(v_pos-a_pos) 
+		if params.lp != 2:  ## this term is zero for lp=2
+			rhs += params.beta_lp*(v_lp-a_lp)
+
+		pdb.set_trace()
 
 	return H
 
