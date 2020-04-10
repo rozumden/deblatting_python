@@ -1,2 +1,2 @@
-# deblatting_python
+# Deblatting in Python
 Python implementation of deblatting
