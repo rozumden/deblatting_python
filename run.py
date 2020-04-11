@@ -24,7 +24,10 @@ def main():
     M1 = np.expand_dims(M,-1)
     F = np.concatenate((0*M1,0.8*M1,0.4*M1),2)
     I = fmo_model(B,H,F,M)
-    He = estimateH_motion(I, B, F, M, Hmask=None)
+    Hmask = fmo_model(np.zeros(B.shape),H,np.repeat(M[:,:,np.newaxis],3,2),M)[:,:,0] > 0.01
+    He = estimateH_motion(I, B, F, M, Hmask)
+
+    pdb.set_trace()
 
 if __name__ == "__main__":
     main()

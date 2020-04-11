@@ -1,82 +1,112 @@
 import cv2
 import numpy as np
 from numpy.fft import fft2, ifft2
+import scipy.sparse.linalg
 
 import pdb
 from utils import *
 
 class Params:
 	def __init__(self):
-		self.gamma = 1 # data term weight
-		self.alpha = 1 # Lp regularizer weight
-		self.beta_lp = 1e2*self.alpha
-		self.beta_pos = 0 # splitting v_pos=h due to positivity constraint, penalty weight
-		self.lp = 1 # exponent of the Lp regularizer sum |h|^p, allowed values are 0, 1/2, 1, 2
+		self.gamma = 1.0 # data term weight
+		self.alpha_h = 1.0 # Lp regularizer weight
+		self.beta_h = 1e3*self.alpha_h
+		self.lp = 1 # exponent of the Lp regularizer sum |h|^p, allowed values are 0, 1
+		self.sum1 = True # force sum(H)=1 constraint (via beta_h), takes precedence over lp
 		self.maxiter = 30 # max number of outer iterations
-		self.rel_tol = (2e-3)**2 # relative between iterations difference for outer ADMM loop
-		self.cg_maxiter = 100 # max number of inner CG iterations ('h' subproblem)
+		self.rel_tol = 2e-3 # relative between iterations difference for outer ADMM loop
+		self.cg_maxiter = 25 # max number of inner CG iterations ('h' subproblem)
 		self.cg_tol = 1e-5 # tolerance for relative residual of inner CG iterations ('h' subproblem)
-		if self.lp == 2:
-			self.beta_lp = self.alpha # naturally applies Lp=2 in the inner CG function
-		
+		self.verbose = True
 
 def estimateH_motion(I, B, F, M, Hmask=None, H=None):
 	if I.shape != B.shape:
 		raise Exception('Shapes must be equal!')
-	if Hmask == None:
+	if Hmask is None:
 		Hmask = np.ones(I.shape[:2]).astype(bool)
 	## TODO: speed-up by padding and ROI
 	params = Params()
 
-	H = np.zeros((np.count_nonzero(Hmask),1))
+	H = np.zeros((np.count_nonzero(Hmask),))
 
-	v_lp = 0; a_lp = 0; v_pos = 0; a_pos = 0 ## init 
+	v_lp = 0 ## init 
+	a_lp = 0 
 	hsize = Hmask.shape
 
-	## precompute RHS for the 'h' subproblem
-	iF = fft2(psfshift(F, hsize))
-	iM = fft2(psfshift(M, hsize))
-	Fgb = fft2(I-B)
-	Fbgb = fft2(B*(I-B))
+	iF = fft2(psfshift(F, hsize),axes=(0,1))
+	iM = fft2(psfshift(M, hsize),axes=(0,1))
+	Fgb = fft2(I-B,axes=(0,1))
+	Fbgb = fft2(B*(I-B),axes=(0,1))
 	iM3 = np.repeat(iM[:, :, np.newaxis], 3, axis=2)
 
-	rhs_const = np.sum(np.real(ifft2(np.conj(iF)*Fgb-np.conj(iM3)*Fbgb)),2)
+	## precompute RHS for the 'h' subproblem
+	rhs_const = np.sum(np.real(ifft2(np.conj(iF)*Fgb-np.conj(iM3)*Fbgb,axes=(0,1))),2)
 	rhs_const = params.gamma*rhs_const[Hmask]
 
 	He = np.zeros(hsize)
+	rel_tol2 = params.rel_tol**2
 	## ADMM loop
 	for iter in range(params.maxiter):
 		H_old = H
-		## 'v_lp' minimization
-		if params.lp != 2 and params.beta_lp > 0 and params.alpha > 0: # eliminates L2
+		if params.beta_h > 0: ## also forces positivity
 			v_lp = H + a_lp
-			if params.lp == 1:
-				temp = v_lp < params.alpha/params.beta_lp
+			if params.sum1:
+				v_lp = proj2simplex(v_lp)
+			elif params.lp == 1:
+				temp = v_lp < params.alpha_h/params.beta_h
 				v_lp[temp] = 0 
-				v_lp[~temp] -= params.alpha/params.beta_lp
-			elif params.lp == .5:
-				temp = v_lp <= 3/2*(params.alpha/params.beta_lp)**(2/3)
-				v_lp[temp] = 0
-				v_lp[~temp] = 2/3*v_lp[~temp]*(1+np.cos(2/3*np.acos(-3**(3/2)/4*params.alpha/params.beta_lp*v_lp[~temp]**(-3/2))))
+				v_lp[~temp] -= params.alpha_h/params.beta_h
 			elif params.lp == 0:
-				v_lp[v_lp <= sqrt(2*params.alpha/params.beta_lp)] = 0
+				v_lp[v_lp <= np.sqrt(2*params.alpha_h/params.beta_h)] = 0
 			a_lp = a_lp + H - v_lp
 
-		## 'v_pos' minimization
-		if params.beta_pos > 0:
-			v_pos = H + a_pos
-			v_pos[v_pos < 0] = 0 ## infinity penalty for negative 'h' values
-			v_pos[v_pos > 1] = 1 ## infinity penalty for 'h' values over 1 
-			a_pos = a_pos + h - v_pos;
+		rhs = rhs_const + params.beta_h*(v_lp-a_lp)
+
+		def estimateH_cg_Ax(hfun):
+			He[Hmask] = hfun
+			FH = fft2(He,axes=(0,1))
+			Fh = iF*np.repeat(FH[:, :, np.newaxis], 3, axis=2) ## apply forward conv (->RGB image, summation over angles)
+			BMh = B*np.repeat(np.real(ifft2(iM*FH,axes=(0,1)))[:, :, np.newaxis], 3, axis=2)
+			Fh_BMh = Fh - fft2(BMh,axes=(0,1))
+			res = np.sum(np.real(ifft2(np.conj(iF)*Fh_BMh - np.conj(iM3)*fft2(B*np.real(ifft2(Fh_BMh,axes=(0,1))),axes=(0,1)),axes=(0,1))),2)
+			res = params.gamma*res[Hmask] + (params.beta_h)*hfun
+			return res
+
+		A = scipy.sparse.linalg.LinearOperator((H.shape[0],H.shape[0]), matvec=estimateH_cg_Ax)
+		H, info = scipy.sparse.linalg.cg(A, rhs, H, params.cg_tol, params.cg_maxiter)
+
+		Diff = (H - H_old)
+		rel_diff2 = (Diff @ Diff)/(H @ H)
+
+		if params.verbose:
+			if False: ## calculate cost
+				FH = fft2(He,axes=(0,1))
+				FH3 = np.repeat(FH[:, :, np.newaxis], 3, axis=2)
+				Fh = iF*FH3
+				BMh = B*np.real(ifft2(iM3*FH3,axes=(0,1)));
+				err = np.sum((np.real(ifft2(Fh,axes=(0,1)))-BMh-(I-B))**2)
+				cost = params.gamma/2*err + params.alpha_h*np.sum(np.abs(H)**params.lp)
+				print("H: iter={}, reldiff={}, err={}, cost={}".format(iter, np.sqrt(rel_diff2), err, cost))	
+			else:
+				print("H: iter={}, reldiff={}".format(iter, np.sqrt(rel_diff2)))	
+			# pdb.set_trace()
 		
-		## 'h' minimization
-		rhs = rhs_const + params.beta_pos*(v_pos-a_pos) 
-		if params.lp != 2:  ## this term is zero for lp=2
-			rhs += params.beta_lp*(v_lp-a_lp)
+		if rel_diff2 < rel_tol2:
+			break
 
-		pdb.set_trace()
+	He[Hmask] = H
 
-	return H
+	return He
+
+def proj2simplex(Y):
+	## euclidean projection of y (arbitrarily shaped but treated as a single vector) to a simplex defined as x>=0 and sum(x(:)) = 1
+	## based on "Projection onto the probability simplex: An efficient algorithm with a simple proof, and an application"; Weiran Wang et al; 2013 (arXiv:1309.1541)
+	Yf = Y.flatten()
+	X = -np.sort(-Yf) ## descend sort
+	temp = (np.cumsum(X)-1)/np.array(range(1,len(X)+1))
+	X = np.reshape(Yf - temp[np.nonzero(X > temp)[0][-1]], Y.shape)
+	X[X < 0] = 0
+	return X
 
 def psfshift(H, usize):
 	## PSFSHIFT Moves PSF center to origin and extends the PSF to be the same size as image (for use with FT). ipsfshift does the reverse.
