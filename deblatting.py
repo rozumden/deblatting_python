@@ -9,12 +9,13 @@ from utils import *
 class Params:
 	def __init__(self):
 		## universal parameters
-		self.gamma = 1.0 # data term weight
+		self.loop_maxiter = 100 # max number of (F,M)/H blind loop alternations  
 		self.maxiter = 10 # max number of outer iterations
-		self.rel_tol = 2e-3 # relative between iterations difference for outer ADMM loop
 		self.cg_maxiter = 25 # max number of inner CG iterations ('h' subproblem)
+		self.rel_tol = 2e-3 # relative between iterations difference for outer ADMM loop
 		self.cg_tol = 1e-5 # tolerance for relative residual of inner CG iterations ('h' subproblem)
 		self.lp = 1 # exponent of the Lp regularizer sum |h|^p or TV |Df|^p, allowed values are 0, 1
+		self.gamma = 1.0 # data term weight
 		## parameters for H estimation
 		self.alpha_h = 1.0 # Lp regularizer weight
 		self.beta_h = 1e3*self.alpha_h
@@ -36,18 +37,18 @@ class StateH:
 		self.v_lp = []
 
 
-def estimateFM_motion(oI, oB, oH, oHmask=None, state=None):
+def estimateFM_motion(oI, oB, oH, oHmask=None, state=None, params=None):
 	## Estimate F,M in FMO equation I = H*F + (1 - H*M)B, where * is convolution
 
 	return F,M
 
-def estimateH_motion(oI, oB, F, M, oHmask=None, state=None):
+def estimateH_motion(oI, oB, F, M, oHmask=None, state=None, params=None):
 	## Estimate H in FMO equation I = H*F + (1 - H*M)B, where * is convolution
 	## Hmask represents a region in which computations are done
 	if oI.shape != oB.shape:
 		raise Exception('Shapes must be equal!')
-	params = Params()
-
+	if params is None:
+		params = Params()
 	if oHmask is None:
 		Hmask = np.ones(I.shape[:2]).astype(bool)
 		I = oI
