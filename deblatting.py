@@ -14,15 +14,18 @@ class Params:
 		self.rel_tol = 2e-3 # relative between iterations difference for outer ADMM loop
 		self.cg_maxiter = 25 # max number of inner CG iterations ('h' subproblem)
 		self.cg_tol = 1e-5 # tolerance for relative residual of inner CG iterations ('h' subproblem)
+		self.lp = 1 # exponent of the Lp regularizer sum |h|^p or TV |Df|^p, allowed values are 0, 1
 		## parameters for H estimation
 		self.alpha_h = 1.0 # Lp regularizer weight
 		self.beta_h = 1e3*self.alpha_h
-		self.lp = 1 # exponent of the Lp regularizer sum |h|^p, allowed values are 0, 1
 		self.sum1 = True # force sum(H)=1 constraint (via beta_h), takes precedence over lp
 		## parameters for F,M estimation
-		self.alpha_f = 2e-12 # F total variation regularizer weight
-		self.alpha_m = 2e-12 # M total variation regularizer weight
-		
+		self.alpha_f = 2e-12 # F,M total variation regularizer weight
+		self.beta_f = 10*self.alpha_f # splitting vx/vy=Df due to the TV regularizer
+		self.lambda_R = 1e-2 # mask rotation symmetry weight term, lambda_R*|R*m-m|^2 where R is approx rotational averaging
+		## parameters for sub-frame F,M estimation
+		self.alpha_cross_f = 2^-12 # cross-image (in 3-dim) image TV regularizer weight 
+		self.beta_cross_f = 10*self.alpha_cross_f # splitting vc=D_cross*f due to cross-image TV regularizer
 		## visualization parameters 
 		self.verbose = True
 
@@ -35,7 +38,7 @@ class StateH:
 
 def estimateFM_motion(oI, oB, oH, oHmask=None, state=None):
 	## Estimate F,M in FMO equation I = H*F + (1 - H*M)B, where * is convolution
-	
+
 	return F,M
 
 def estimateH_motion(oI, oB, F, M, oHmask=None, state=None):
