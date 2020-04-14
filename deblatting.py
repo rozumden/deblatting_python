@@ -8,24 +8,53 @@ from utils import *
 
 class Params:
 	def __init__(self):
+		## universal parameters
 		self.gamma = 1.0 # data term weight
+		self.maxiter = 10 # max number of outer iterations
+		self.rel_tol = 2e-3 # relative between iterations difference for outer ADMM loop
+		self.cg_maxiter = 25 # max number of inner CG iterations ('h' subproblem)
+		self.cg_tol = 1e-5 # tolerance for relative residual of inner CG iterations ('h' subproblem)
+		## parameters for H estimation
 		self.alpha_h = 1.0 # Lp regularizer weight
 		self.beta_h = 1e3*self.alpha_h
 		self.lp = 1 # exponent of the Lp regularizer sum |h|^p, allowed values are 0, 1
 		self.sum1 = True # force sum(H)=1 constraint (via beta_h), takes precedence over lp
-		self.maxiter = 30 # max number of outer iterations
-		self.rel_tol = 2e-3 # relative between iterations difference for outer ADMM loop
-		self.cg_maxiter = 25 # max number of inner CG iterations ('h' subproblem)
-		self.cg_tol = 1e-5 # tolerance for relative residual of inner CG iterations ('h' subproblem)
+		## parameters for F,M estimation
+		self.alpha_f = 2e-12 # F total variation regularizer weight
+		self.alpha_m = 2e-12 # M total variation regularizer weight
+		
+		## visualization parameters 
 		self.verbose = True
 
-def estimateH_motion(I, B, F, M, Hmask=None, H=None):
-	if I.shape != B.shape:
+class StateH:
+	def __init__(self):
+		self.H = []
+		self.a_lp = []
+		self.v_lp = []
+
+
+def estimateFM_motion(oI, oB, oH, oHmask=None, state=None):
+	## Estimate F,M in FMO equation I = H*F + (1 - H*M)B, where * is convolution
+	
+	return F,M
+
+def estimateH_motion(oI, oB, F, M, oHmask=None, state=None):
+	## Estimate H in FMO equation I = H*F + (1 - H*M)B, where * is convolution
+	## Hmask represents a region in which computations are done
+	if oI.shape != oB.shape:
 		raise Exception('Shapes must be equal!')
-	if Hmask is None:
-		Hmask = np.ones(I.shape[:2]).astype(bool)
-	## TODO: speed-up by padding and ROI
 	params = Params()
+
+	if oHmask is None:
+		Hmask = np.ones(I.shape[:2]).astype(bool)
+		I = oI
+		B = oB
+	else: ## speed-up by padding and ROI
+		pads = np.ceil( (np.array(M.shape)-1)/2 ).astype(int)
+		rmin, rmax, cmin, cmax = boundingBox(oHmask, pads)
+		I = oI[rmin:rmax,cmin:cmax,:]
+		B = oB[rmin:rmax,cmin:cmax,:]
+		Hmask = oHmask[rmin:rmax,cmin:cmax]
 
 	H = np.zeros((np.count_nonzero(Hmask),))
 
@@ -79,6 +108,10 @@ def estimateH_motion(I, B, F, M, Hmask=None, H=None):
 		rel_diff2 = (Diff @ Diff)/(H @ H)
 
 		if params.verbose:
+			if False:
+				He[Hmask] = H
+				He /= np.max(He)
+				imshow(He)
 			if False: ## calculate cost
 				FH = fft2(He,axes=(0,1))
 				FH3 = np.repeat(FH[:, :, np.newaxis], 3, axis=2)
@@ -94,9 +127,10 @@ def estimateH_motion(I, B, F, M, Hmask=None, H=None):
 		if rel_diff2 < rel_tol2:
 			break
 
-	He[Hmask] = H
+	oHe = np.zeros(oHmask.shape)
+	oHe[oHmask] = H
 
-	return He
+	return oHe
 
 def proj2simplex(Y):
 	## euclidean projection of y (arbitrarily shaped but treated as a single vector) to a simplex defined as x>=0 and sum(x(:)) = 1

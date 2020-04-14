@@ -30,6 +30,18 @@ def diskMask(rad):
 	M = mask.astype(float)
 	return M
 
+def boundingBox(img, pads=None):
+    rows = np.any(img, axis=1)
+    cols = np.any(img, axis=0)
+    rmin, rmax = np.where(rows)[0][[0, -1]]
+    cmin, cmax = np.where(cols)[0][[0, -1]]
+    if pads is not None:
+    	rmin = max(rmin - pads[0], 0)
+    	rmax = min(rmax + pads[0], img.shape[0])
+    	cmin = max(cmin - pads[1], 0)
+    	cmax = min(cmax + pads[1], img.shape[1])
+    return rmin, rmax, cmin, cmax
+    
 def convert_size(size_bytes): 
     if size_bytes == 0: 
         return "0B" 
