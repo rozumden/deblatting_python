@@ -65,9 +65,6 @@ def estimateFM_motion(I, B, H, M, F=None, F_T=0, M_T=0, oHmask=None, state=None,
 
 	## init
 	Dx, Dy = createDerivatives0(Fshape)
-	
-	pdb.set_trace()
-
 	DTD = (Dx.T @ Dx) + (Dy.T @ Dy)
 	vx = np.zeros((Dx.shape[0],Fshape[2]))
 	vy = np.zeros((Dy.shape[0],Fshape[2]))
@@ -76,7 +73,7 @@ def estimateFM_motion(I, B, H, M, F=None, F_T=0, M_T=0, oHmask=None, state=None,
 	vy_m = np.zeros((Dy.shape[0],1))
 	ax_m = 0; ay_m = 0 ## v_m=Dm splitting due to TV (m-part) and its assoc. Lagr. mult.
 	
-	f = 0; af = 0 ## vf=f splitting due to positivity and f=0 outside mask constraint
+	vf = 0; af = 0 ## vf=f splitting due to positivity and f=0 outside mask constraint
 	vm = 0; am = 0 ## vm=m splitting due to mask between [0,1]
 	if params.lambda_R > 0:
 		Rn = createRnMatrix(Fshape[:2])
@@ -86,8 +83,8 @@ def estimateFM_motion(I, B, H, M, F=None, F_T=0, M_T=0, oHmask=None, state=None,
 
 	fdx = Dx @ f
 	fdy = Dy @ f
-	mdx = Dx*m
-	mdy = Dy*m
+	mdx = Dx @ m
+	mdy = Dy @ m
 	rel_tol2 = params.rel_tol**2
 
 	return F,M
@@ -202,7 +199,7 @@ def createDerivatives0(sz):
 	v1 = np.ones((sz[0]-1, sz[1]))
 	v2 = np.ones((1,sz[1]))
 	inds = idx_out[np.r_[:(idx_out.shape[0]-1), 1:idx_out.shape[0]], :-1]
-	index = idx_in[np.r_[0,:(idx_in.shape[0]-1), 1:idx_in.shape[0], idx_in.shape[1]-1],:]
+	index = idx_in[np.r_[0,:(idx_in.shape[0]-1), 1:idx_in.shape[0], idx_in.shape[0]-1],:]
 	values = np.vstack((v2,-v1,v1,-v2))
 	Dy = sparse.csc_matrix((values.flatten(),(inds.flatten(),index.flatten())), shape=(N_out, N_in))
 	return Dx, Dy
