@@ -2,6 +2,7 @@ import cv2
 import numpy as np
 from numpy.fft import fft2, ifft2
 import scipy.sparse.linalg
+from scipy import sparse
 
 import pdb
 from utils import *
@@ -23,7 +24,8 @@ class Params:
 		## parameters for F,M estimation
 		self.alpha_f = 2e-12 # F,M total variation regularizer weight
 		self.beta_f = 10*self.alpha_f # splitting vx/vy=Df due to the TV regularizer
-		self.lambda_R = 1e-2 # mask rotation symmetry weight term, lambda_R*|R*m-m|^2 where R is approx rotational averaging
+		self.lambda_T = 0 # template L2 term weight
+		self.lambda_R = 0 # mask rotation symmetry weight term, lambda_R*|R*m-m|^2 where R is approx rotational averaging, e.g. 1e-2
 		## parameters for sub-frame F,M estimation
 		self.alpha_cross_f = 2^-12 # cross-image (in 3-dim) image TV regularizer weight 
 		self.beta_cross_f = 10*self.alpha_cross_f # splitting vc=D_cross*f due to cross-image TV regularizer
@@ -37,8 +39,56 @@ class StateH:
 		self.v_lp = []
 
 
-def estimateFM_motion(oI, oB, oH, oHmask=None, state=None, params=None):
+def estimateFM_motion(I, B, H, M, F=None, F_T=0, M_T=0, oHmask=None, state=None, params=None):
 	## Estimate F,M in FMO equation I = H*F + (1 - H*M)B, where * is convolution
+	## M is needed to know approximate object size, can be array of zeros
+	## F_T, M_T - template for F and M
+	if params is None:
+		params = Params()
+	if oHmask is None:
+		Hmask = np.ones(I.shape[:2]).astype(bool)
+	if F is None:
+		F = np.zeros((M.shape[0],M.shape[1],3))
+
+	Fshape = F.shape
+	f = vec3(F)
+	m = M.flatten()
+	if F_T != 0:
+		F_T = vec3(F_T)
+	if M_T != 0:
+		M_T = M_T.flatten()
+	Me = np.zeros(M.shape)
+	Fe = np.zeros(F.shape)
+
+	idx_f, idy_f, idz_f = psfshift_idx(F.shape, I.shape)
+	idx_m, idy_m = psfshift_idx(M.shape, I.shape[:2])
+
+	## init
+	Dx, Dy = createDerivatives0(Fshape)
+	
+	pdb.set_trace()
+
+	DTD = (Dx.T @ Dx) + (Dy.T @ Dy)
+	vx = np.zeros((Dx.shape[0],Fshape[2]))
+	vy = np.zeros((Dy.shape[0],Fshape[2]))
+	ax = 0; ay = 0 ## v=Df splitting due to TV and its assoc. Lagr. mult.
+	vx_m = np.zeros((Dx.shape[0],1))
+	vy_m = np.zeros((Dy.shape[0],1))
+	ax_m = 0; ay_m = 0 ## v_m=Dm splitting due to TV (m-part) and its assoc. Lagr. mult.
+	
+	f = 0; af = 0 ## vf=f splitting due to positivity and f=0 outside mask constraint
+	vm = 0; am = 0 ## vm=m splitting due to mask between [0,1]
+	if params.lambda_R > 0:
+		Rn = createRnMatrix(Fshape[:2])
+		Rn = Rn @ Rn - Rn.T - Rn + sparse.eye(Rn.shape)
+
+	pdb.set_trace()
+
+	fdx = Dx @ f
+	fdy = Dy @ f
+	mdx = Dx*m
+	mdy = Dy*m
+	rel_tol2 = params.rel_tol**2
 
 	return F,M
 
@@ -136,6 +186,27 @@ def estimateH_motion(oI, oB, F, M, oHmask=None, state=None, params=None):
 
 	return oHe
 
+def createDerivatives0(sz):
+	N_in = sz[0] * sz[1]
+	N_out = (sz[0]+1) * (sz[1]+1)
+	idx_in = np.reshape( range(N_in), sz[:2])
+	idx_out = np.reshape( range(N_out), np.array(sz[:2])+1)
+	## x direction
+	v1 = np.ones((sz[0], sz[1]-1))
+	v2 = np.ones((sz[0],1))
+	inds = idx_out[:-1,np.r_[:(idx_out.shape[1]-1), 1:idx_out.shape[1]]]
+	index = idx_in[:, np.r_[0,:(idx_in.shape[1]-1), 1:idx_in.shape[1], idx_in.shape[1]-1] ]
+	values = np.hstack((v2,-v1,v1,-v2))
+	Dx = sparse.csc_matrix((values.flatten(),(inds.flatten(),index.flatten())), shape=(N_out, N_in))
+	## y direction
+	v1 = np.ones((sz[0]-1, sz[1]))
+	v2 = np.ones((1,sz[1]))
+	inds = idx_out[np.r_[:(idx_out.shape[0]-1), 1:idx_out.shape[0]], :-1]
+	index = idx_in[np.r_[0,:(idx_in.shape[0]-1), 1:idx_in.shape[0], idx_in.shape[1]-1],:]
+	values = np.vstack((v2,-v1,v1,-v2))
+	Dy = sparse.csc_matrix((values.flatten(),(inds.flatten(),index.flatten())), shape=(N_out, N_in))
+	return Dx, Dy
+
 def proj2simplex(Y):
 	## euclidean projection of y (arbitrarily shaped but treated as a single vector) to a simplex defined as x>=0 and sum(x(:)) = 1
 	## based on "Projection onto the probability simplex: An efficient algorithm with a simple proof, and an application"; Weiran Wang et al; 2013 (arXiv:1309.1541)
@@ -166,3 +237,36 @@ def ipsfshift(H, hsize):
 	Hr = np.roll(H, shift, axis=(0,1))
 	Hc = Hr[:hsize[0], :hsize[1], :]
 	return Hc
+
+def psfshift_idx(small, sz_large):
+	## variant of psfshift intended for repeated use in a loop (subsequent calls are faster)
+	## determines index pairing between 'small' and 'large' images, i.e. if large = psfshift(small, sz_large) then large[idx,idy] = small[mask_small]
+	if type(small) == tuple: ## it is shape
+		temp = np.reshape(np.array(range(1, np.prod(small)+1)), small).astype(int)
+	else: ## it is array
+		temp = np.zeros(small.shape).astype(int)
+		temp[small] = np.array(range(1, np.count_nonzero(small)+1))
+	temp = psfshift(temp, sz_large).astype(int)
+	if len(temp.shape) == 2:
+		idx,idy = np.nonzero(temp)
+		temp_idx = temp[idx,idy]
+		pos = np.zeros(temp_idx.shape).astype(int)
+		pos[temp_idx-1] = range(len(temp_idx))
+		idx = idx[pos]
+		idy = idy[pos]
+		return idx, idy
+	elif len(temp.shape) == 3:
+		idx,idy,idz = np.nonzero(temp)
+		temp_idx = temp[idx,idy,idz]
+		pos = np.zeros(temp_idx.shape).astype(int)
+		pos[temp_idx-1] = range(len(temp_idx))
+		idx = idx[pos]
+		idy = idy[pos]
+		idz = idz[pos]
+		return idx, idy, idz
+
+def vec3(I):
+	return np.reshape(I, (I.shape[0]*I.shape[1], I.shape[2]))
+
+def ivec3(I, ishape):
+	return np.reshape(I, ishape)

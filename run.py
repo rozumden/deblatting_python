@@ -25,7 +25,9 @@ def main():
     F = np.concatenate((0*M1,0.8*M1,0.4*M1),2)
     I = fmo_model(B,H,F,M)
     Hmask = fmo_model(np.zeros(B.shape),H,np.repeat(M[:,:,np.newaxis],3,2),M)[:,:,0] > 0.01
-    He = estimateH_motion(I, B, F, M, Hmask)
+    
+    # He = estimateH_motion(I, B, F, M, Hmask)
+    Fe,Me = estimateFM_motion(I,B,H,M)
 
     pdb.set_trace()
 
