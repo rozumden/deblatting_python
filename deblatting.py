@@ -131,10 +131,8 @@ def estimateFM_motion(I, B, H, M, F=None, F_T=0, M_T=0, oHmask=None, state=None,
 		## F,M step
 		rhs1 = rhs_f + params.beta_f*(Dx.T @ (vx-ax) + Dy.T @ (vy-ay)) + params.beta_fm*(vf-af) # f-part of RHS
 		rhs2 = rhs_m + params.beta_f*(Dx.T @ (vx_m-ax_m)+Dy.T @ (vy_m-ay_m)).flatten() + params.beta_fm*(vm-am) # m-part of RHS
-		
-		def estimateFM_cg_Ax_dummy(fmfun):
-			return fmfun
 		def estimateFM_cg_Ax(fmfun):
+			# fmfun0 = np.reshape()
 			xf = fmfun[:,:Fshape[2]] 
 			xm = fmfun[:,-1]
 			Fe[idx_f,idy_f,idz_f] = xf.flatten()
@@ -150,8 +148,8 @@ def estimateFM_motion(I, B, H, M, F=None, F_T=0, M_T=0, oHmask=None, state=None,
 			res = np.c_[yf,ym] + beta_tv4*(DTD @ fmfun) + params.beta_fm*fmfun # common regularizers/identity terms
 			return res
 		pdb.set_trace()
-		A = scipy.sparse.linalg.LinearOperator((f.shape[0],f.shape[0]), matvec=estimateFM_cg_Ax_dummy, matmat=estimateFM_cg_Ax)
-		fm, info = scipy.sparse.linalg.cg(A, np.c_[rhs1,rhs2], np.c_[f,m], params.cg_tol, params.cg_maxiter)
+		A = scipy.sparse.linalg.LinearOperator((4*f.shape[0],4*f.shape[0]), matvec=estimateFM_cg_Ax)
+		fm, info = scipy.sparse.linalg.cg(A, np.c_[rhs1,rhs2].flatten(), np.c_[f,m].flatten(), params.cg_tol, params.cg_maxiter)
 		f = fm[:, :Fshape[2]]
 		m = fm[:, -1]
 
