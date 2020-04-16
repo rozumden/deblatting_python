@@ -14,7 +14,7 @@ class Params:
 		self.maxiter = 10 # max number of outer iterations
 		self.cg_maxiter = 25 # max number of inner CG iterations ('h' subproblem)
 		self.rel_tol = 2e-3 # relative between iterations difference for outer ADMM loop
-		self.cg_tol = 1e-5 # tolerance for relative residual of inner CG iterations ('h' subproblem)
+		self.cg_tol = 1e-5 # tolerance for relative residual of inner CG iterations 
 		self.lp = 1 # exponent of the Lp regularizer sum |h|^p or TV |Df|^p, allowed values are 0, 1
 		self.gamma = 1.0 # data term weight
 		## parameters for H estimation
@@ -83,14 +83,14 @@ def estimateFM_motion(I, B, H, M, F=None, F_T=0, M_T=0, oHmask=None, state=None,
 	else:
 		Rn = 0
 
-	fH = fft2(H) # precompute FT
+	fH = fft2(H,axes=(0,1)) # precompute FT
 	HT = np.conj(fH) 
 	HT3 = np.repeat(HT[:, :, np.newaxis], 3, axis=2)
 	## precompute const RHS for 'f/m' subproblem
 	rhs_f = np.real(ifft2(HT3*fft2(I-B,axes=(0,1)),axes=(0,1)))
 	rhs_f = params.gamma*np.reshape(rhs_f[idx_f,idy_f,idz_f], (idx_m.shape[0],Fshape[2]))
 	rhs_f += (params.lambda_T*F_T) ## template matching term lambda_T*|F-F_T|  
-	rhs_m = np.real(ifft2(HT*fft2(np.sum(B*(I-B),2))))
+	rhs_m = np.real(ifft2(HT*fft2(np.sum(B*(I-B),2),axes=(0,1)),axes=(0,1)))
 	rhs_m = -params.gamma*rhs_m[idx_m,idy_m] + params.lambda_T*M_T ## template matching term lambda_T*|M-M_T|  
 
 	fdx = Dx @ f
@@ -114,6 +114,14 @@ def estimateFM_motion(I, B, H, M, F=None, F_T=0, M_T=0, oHmask=None, state=None,
 			vy = val_y*shrink_factor
 			ax = ax + fdx - vx ## 'a' step
 			ay = ay + fdy - vy 
+			## vx_m/vy_m minimization (splitting due to TV regularizer for the mask)
+			val_x = mdx + ax_m 
+			val_y = mdy + ay_m
+			shrink_factor = lp_proximal_mapping(np.sqrt(val_x**2 + val_y**2), params.alpha_f/params.beta_f, params.lp)
+			vx_m = val_x*shrink_factor
+			vy_m = val_y*shrink_factor
+			ax_m = ax_m + mdx - vx_m
+			ay_m = ay_m + mdy - vy_m
 		## vf/vm minimization (positivity and and f-m relation so that F is not large where M is small, mostly means F<=M)
 		if params.beta_fm > 0:
 			vf = f + af
@@ -130,31 +138,57 @@ def estimateFM_motion(I, B, H, M, F=None, F_T=0, M_T=0, oHmask=None, state=None,
 
 		## F,M step
 		rhs1 = rhs_f + params.beta_f*(Dx.T @ (vx-ax) + Dy.T @ (vy-ay)) + params.beta_fm*(vf-af) # f-part of RHS
-		rhs2 = rhs_m + params.beta_f*(Dx.T @ (vx_m-ax_m)+Dy.T @ (vy_m-ay_m)).flatten() + params.beta_fm*(vm-am) # m-part of RHS
-		def estimateFM_cg_Ax(fmfun):
-			# fmfun0 = np.reshape()
+		rhs2 = rhs_m + params.beta_f*(Dx.T @ (vx_m-ax_m) + Dy.T @ (vy_m-ay_m)).flatten() + params.beta_fm*(vm-am) # m-part of RHS
+		def estimateFM_cg_Ax(fmfun0):
+			fmfun = np.reshape(fmfun0, (-1,4))
 			xf = fmfun[:,:Fshape[2]] 
 			xm = fmfun[:,-1]
 			Fe[idx_f,idy_f,idz_f] = xf.flatten()
 			Me[idx_m,idy_m] = xm
 			HF = H[:,:,np.newaxis]*fft2(Fe,axes=(0,1))
-			bHM = B*np.real(ifft2(H*fft2(Me)))[:,:,np.newaxis]
+			bHM = B*np.real(ifft2(H*fft2(Me,axes=(0,1)),axes=(0,1)))[:,:,np.newaxis]
 			yf = np.real(ifft2(HT3*(HF - fft2(bHM,axes=(0,1))),axes=(0,1)))
 			yf = params.gamma*np.reshape(yf[idx_f,idy_f,idz_f],(idx_m.shape[0],Fshape[2]))
-			ym = np.real(ifft2(HT*fft2(np.sum(B*(bHM - np.real(ifft2(HF,axes=(0,1)))),2))))
+			ym = np.real(ifft2(HT*fft2(np.sum(B*(bHM - np.real(ifft2(HF,axes=(0,1)))),2),axes=(0,1)),axes=(0,1)))
 			ym = params.gamma*ym[idx_m,idy_m]
 			yf = yf + params.lambda_T*xf
 			ym = ym + params.lambda_T*xm + params.lambda_R*(Rn * xm) # mask regularizers, TODO: rotation @
 			res = np.c_[yf,ym] + beta_tv4*(DTD @ fmfun) + params.beta_fm*fmfun # common regularizers/identity terms
-			return res
-		pdb.set_trace()
+			return res.flatten()
 		A = scipy.sparse.linalg.LinearOperator((4*f.shape[0],4*f.shape[0]), matvec=estimateFM_cg_Ax)
 		fm, info = scipy.sparse.linalg.cg(A, np.c_[rhs1,rhs2].flatten(), np.c_[f,m].flatten(), params.cg_tol, params.cg_maxiter)
+		fm = np.reshape(fm, (-1,4))
 		f = fm[:, :Fshape[2]]
 		m = fm[:, -1]
 
+		fdx = Dx @ f
+		fdy = Dy @ f
+		mdx = Dx @ m
+		mdy = Dy @ m
 
-	return F,M
+		ff = f.flatten()
+		df = ff-f_old.flatten()
+		dm = m-m_old
+		rel_diff2_f = (df @ df)/(ff @ ff)
+		rel_diff2_m = (dm @ dm)/(m @ m)
+		
+		if params.verbose:
+			if True: # calculate cost 
+				Fe[idx_f,idy_f,idz_f] = ff
+				Me[idx_m,idy_m] = m
+				err = np.sum(np.reshape(np.real(ifft2(H[:,:,np.newaxis]*fft2(Fe,axes=(0,1)),axes=(0,1)))-B*np.real(ifft2(H*fft2(Me)))[:,:,np.newaxis]-(I-B), (-1,1))**2)
+				cost = (params.gamma/2)*err + params.alpha_f*np.sum(np.sqrt(fdx**2+fdy**2))
+				cost = cost + params.alpha_f*np.sum(np.sqrt(mdx**2+mdy**2)) + params.lambda_T*np.sum((f-F_T)**2)/2 + np.sum(params.lambda_T*(m-M_T)**2)/2
+				print("FM: iter={}, reldiff=({}, {}), err={}, cost={}".format(iter, np.sqrt(rel_diff2_f), np.sqrt(rel_diff2_m),err,cost))	
+			else:
+				print("FM: iter={}, reldiff=({}, {})".format(iter, np.sqrt(rel_diff2_f), np.sqrt(rel_diff2_m)))	
+
+		if rel_diff2_f < rel_tol2 and rel_diff2_m < rel_tol2:
+			break
+
+	f_img = ivec3(f, Fshape)
+	m_img = ivec3(m, Fshape[:2])
+	return f_img,m_img
 
 def estimateH_motion(oI, oB, F, M, oHmask=None, state=None, params=None):
 	## Estimate H in FMO equation I = H*F + (1 - H*M)B, where * is convolution
