@@ -22,10 +22,10 @@ class Params:
 		self.beta_h = 1e3*self.alpha_h
 		self.sum1 = True # force sum(H)=1 constraint (via beta_h), takes precedence over lp
 		## parameters for F,M estimation
-		self.alpha_f = 2e-12 # F,M total variation regularizer weight
+		self.alpha_f = 0*2e-12 # F,M total variation regularizer weight
 		self.beta_f = 10*self.alpha_f # splitting vx/vy=Df due to the TV regularizer
 		self.beta_fm = 1e-3 # splitting vf=f and vm=m due to (F,M) in C constraint where C is prescribed convex set given by positivity and F-M relation, penalty weight
-		self.pyramid_eps = 1 # inverse slope of the f<=m/eps constraing for each channel. eps=0 means no constraint (only m in [0,1], f>0), eps=1 means f<=m etc
+		self.pyramid_eps = 0 # inverse slope of the f<=m/eps constraing for each channel. eps=0 means no constraint (only m in [0,1], f>0), eps=1 means f<=m etc
 		self.lambda_T = 0 # template L2 term weight
 		self.lambda_R = 0 # mask rotation symmetry weight term, lambda_R*|R*m-m|^2 where R is approx rotational averaging, e.g. 1e-2
 		## parameters for sub-frame F,M estimation
@@ -92,7 +92,7 @@ def estimateFM_motion(I, B, H, M, F=None, F_T=0, M_T=0, oHmask=None, state=None,
 	HT3 = np.repeat(HT[:, :, np.newaxis], 3, axis=2)
 	## precompute const RHS for 'f/m' subproblem
 	rhs_f = np.real(ifft2(HT3*fft2(I-B,axes=(0,1)),axes=(0,1)))
-	rhs_f = params.gamma*np.reshape(rhs_f[idx_f,idy_f,idz_f], (idx_m.shape[0],Fshape[2]))
+	rhs_f = params.gamma*np.reshape(rhs_f[idx_f,idy_f,idz_f], (-1,Fshape[2]))
 	rhs_f += (params.lambda_T*F_T) ## template matching term lambda_T*|F-F_T|  
 	rhs_m = np.real(ifft2(HT*fft2(np.sum(B*(I-B),2),axes=(0,1)),axes=(0,1)))
 	rhs_m = -params.gamma*rhs_m[idx_m,idy_m] + params.lambda_T*M_T ## template matching term lambda_T*|M-M_T|  
@@ -150,7 +150,7 @@ def estimateFM_motion(I, B, H, M, F=None, F_T=0, M_T=0, oHmask=None, state=None,
 			Fe[idx_f,idy_f,idz_f] = xf.flatten()
 			Me[idx_m,idy_m] = xm
 			HF = H[:,:,np.newaxis]*fft2(Fe,axes=(0,1))
-			bHM = B*np.real(ifft2(H*fft2(Me,axes=(0,1)),axes=(0,1)))[:,:,np.newaxis]
+			bHM = B*(np.real(ifft2(H*fft2(Me,axes=(0,1)),axes=(0,1)))[:,:,np.newaxis])
 			yf = np.real(ifft2(HT3*(HF - fft2(bHM,axes=(0,1))),axes=(0,1)))
 			yf = params.gamma*np.reshape(yf[idx_f,idy_f,idz_f],(-1,Fshape[2]))
 			ym = np.real(ifft2(HT*fft2(np.sum(B*(bHM - np.real(ifft2(HF,axes=(0,1)))),2),axes=(0,1)),axes=(0,1)))
@@ -177,6 +177,9 @@ def estimateFM_motion(I, B, H, M, F=None, F_T=0, M_T=0, oHmask=None, state=None,
 		rel_diff2_m = (dm @ dm)/(m @ m)
 		
 		if params.verbose:
+			# f_img = ivec3(f, Fshape)
+			# m_img = ivec3(m, Fshape[:2])
+			# pdb.set_trace()
 			if True: # calculate cost 
 				Fe[idx_f,idy_f,idz_f] = ff
 				Me[idx_m,idy_m] = m
