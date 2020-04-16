@@ -70,13 +70,17 @@ def estimateFM_motion(I, B, H, M, F=None, F_T=0, M_T=0, oHmask=None, state=None,
 	DTD = (Dx.T @ Dx) + (Dy.T @ Dy)
 	vx = np.zeros((Dx.shape[0],Fshape[2]))
 	vy = np.zeros((Dy.shape[0],Fshape[2]))
-	ax = 0; ay = 0 ## v=Df splitting due to TV and its assoc. Lagr. mult.
+	ax = 0 ## v=Df splitting due to TV and its assoc. Lagr. mult.
+	ay = 0
 	vx_m = np.zeros((Dx.shape[0],1))
 	vy_m = np.zeros((Dy.shape[0],1))
-	ax_m = 0; ay_m = 0 ## v_m=Dm splitting due to TV (m-part) and its assoc. Lagr. mult.
+	ax_m = 0 ## v_m=Dm splitting due to TV (m-part) and its assoc. Lagr. mult.
+	ay_m = 0 
 	
-	vf = 0; af = 0 ## vf=f splitting due to positivity and f=0 outside mask constraint
-	vm = 0; am = 0 ## vm=m splitting due to mask between [0,1]
+	vf = 0 ## vf=f splitting due to positivity and f=0 outside mask constraint
+	af = 0 
+	vm = 0 ## vm=m splitting due to mask between [0,1]
+	am = 0 
 	if params.lambda_R > 0: ## TODO
 		Rn = createRnMatrix(Fshape[:2])
 		Rn = Rn.T @ Rn - Rn.T - Rn + sparse.eye(Rn.shape)
@@ -148,7 +152,7 @@ def estimateFM_motion(I, B, H, M, F=None, F_T=0, M_T=0, oHmask=None, state=None,
 			HF = H[:,:,np.newaxis]*fft2(Fe,axes=(0,1))
 			bHM = B*np.real(ifft2(H*fft2(Me,axes=(0,1)),axes=(0,1)))[:,:,np.newaxis]
 			yf = np.real(ifft2(HT3*(HF - fft2(bHM,axes=(0,1))),axes=(0,1)))
-			yf = params.gamma*np.reshape(yf[idx_f,idy_f,idz_f],(idx_m.shape[0],Fshape[2]))
+			yf = params.gamma*np.reshape(yf[idx_f,idy_f,idz_f],(-1,Fshape[2]))
 			ym = np.real(ifft2(HT*fft2(np.sum(B*(bHM - np.real(ifft2(HF,axes=(0,1)))),2),axes=(0,1)),axes=(0,1)))
 			ym = params.gamma*ym[idx_m,idy_m]
 			yf = yf + params.lambda_T*xf
