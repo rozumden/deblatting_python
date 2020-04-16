@@ -24,6 +24,8 @@ class Params:
 		## parameters for F,M estimation
 		self.alpha_f = 2e-12 # F,M total variation regularizer weight
 		self.beta_f = 10*self.alpha_f # splitting vx/vy=Df due to the TV regularizer
+		self.beta_fm = 1e-3 # splitting vf=f and vm=m due to (F,M) in C constraint where C is prescribed convex set given by positivity and F-M relation, penalty weight
+		self.pyramid_eps = 1 # inverse slope of the f<=m/eps constraing for each channel. eps=0 means no constraint (only m in [0,1], f>0), eps=1 means f<=m etc
 		self.lambda_T = 0 # template L2 term weight
 		self.lambda_R = 0 # mask rotation symmetry weight term, lambda_R*|R*m-m|^2 where R is approx rotational averaging, e.g. 1e-2
 		## parameters for sub-frame F,M estimation
@@ -57,8 +59,8 @@ def estimateFM_motion(I, B, H, M, F=None, F_T=0, M_T=0, oHmask=None, state=None,
 		F_T = vec3(F_T)
 	if M_T != 0:
 		M_T = M_T.flatten()
-	Me = np.zeros(M.shape)
-	Fe = np.zeros(F.shape)
+	Me = np.zeros(I.shape[:2])
+	Fe = np.zeros(I.shape)
 
 	idx_f, idy_f, idz_f = psfshift_idx(F.shape, I.shape)
 	idx_m, idy_m = psfshift_idx(M.shape, I.shape[:2])
@@ -75,17 +77,84 @@ def estimateFM_motion(I, B, H, M, F=None, F_T=0, M_T=0, oHmask=None, state=None,
 	
 	vf = 0; af = 0 ## vf=f splitting due to positivity and f=0 outside mask constraint
 	vm = 0; am = 0 ## vm=m splitting due to mask between [0,1]
-	if params.lambda_R > 0:
+	if params.lambda_R > 0: ## TODO
 		Rn = createRnMatrix(Fshape[:2])
-		Rn = Rn @ Rn - Rn.T - Rn + sparse.eye(Rn.shape)
+		Rn = Rn.T @ Rn - Rn.T - Rn + sparse.eye(Rn.shape)
+	else:
+		Rn = 0
 
-	pdb.set_trace()
+	fH = fft2(H) # precompute FT
+	HT = np.conj(fH) 
+	HT3 = np.repeat(HT[:, :, np.newaxis], 3, axis=2)
+	## precompute const RHS for 'f/m' subproblem
+	rhs_f = np.real(ifft2(HT3*fft2(I-B,axes=(0,1)),axes=(0,1)))
+	rhs_f = params.gamma*np.reshape(rhs_f[idx_f,idy_f,idz_f], (idx_m.shape[0],Fshape[2]))
+	rhs_f += (params.lambda_T*F_T) ## template matching term lambda_T*|F-F_T|  
+	rhs_m = np.real(ifft2(HT*fft2(np.sum(B*(I-B),2))))
+	rhs_m = -params.gamma*rhs_m[idx_m,idy_m] + params.lambda_T*M_T ## template matching term lambda_T*|M-M_T|  
 
 	fdx = Dx @ f
 	fdy = Dy @ f
 	mdx = Dx @ m
 	mdy = Dy @ m
+	beta_tv4 = np.repeat(params.beta_f, Fshape[2]+1)
 	rel_tol2 = params.rel_tol**2
+	
+	## ADMM loop
+	for iter in range(params.maxiter):
+		f_old = f
+		m_old = m
+
+		## dual/auxiliary var updates, vx/vy minimization (splitting due to TV regularizer)
+		if params.alpha_f > 0 and params.beta_f > 0:
+			val_x = fdx + ax
+			val_y = fdy + ay
+			shrink_factor = lp_proximal_mapping(np.sqrt(val_x**2 + val_y**2), params.alpha_f/params.beta_f, params.lp) # isotropic "TV"
+			vx = val_x*shrink_factor
+			vy = val_y*shrink_factor
+			ax = ax + fdx - vx ## 'a' step
+			ay = ay + fdy - vy 
+		## vf/vm minimization (positivity and and f-m relation so that F is not large where M is small, mostly means F<=M)
+		if params.beta_fm > 0:
+			vf = f + af
+			vm = m + am
+			if params.pyramid_eps > 0: # (m,f) constrained to convex pyramid-like shape to force f<=const*m where const = 1/eps
+				vm, vf = project2pyramid(vm, vf, params.pyramid_eps)
+			else: # just positivity and m in [0,1]
+				vf[vf < 0] = 0
+				vm[vm < 0] = 0 
+				vm[vm > 1] = 1
+			# lagrange multiplier (dual var) update
+			af = af + f - vf
+			am = am + m - vm
+
+		## F,M step
+		rhs1 = rhs_f + params.beta_f*(Dx.T @ (vx-ax) + Dy.T @ (vy-ay)) + params.beta_fm*(vf-af) # f-part of RHS
+		rhs2 = rhs_m + params.beta_f*(Dx.T @ (vx_m-ax_m)+Dy.T @ (vy_m-ay_m)).flatten() + params.beta_fm*(vm-am) # m-part of RHS
+		
+		def estimateFM_cg_Ax_dummy(fmfun):
+			return fmfun
+		def estimateFM_cg_Ax(fmfun):
+			xf = fmfun[:,:Fshape[2]] 
+			xm = fmfun[:,-1]
+			Fe[idx_f,idy_f,idz_f] = xf.flatten()
+			Me[idx_m,idy_m] = xm
+			HF = H[:,:,np.newaxis]*fft2(Fe,axes=(0,1))
+			bHM = B*np.real(ifft2(H*fft2(Me)))[:,:,np.newaxis]
+			yf = np.real(ifft2(HT3*(HF - fft2(bHM,axes=(0,1))),axes=(0,1)))
+			yf = params.gamma*np.reshape(yf[idx_f,idy_f,idz_f],(idx_m.shape[0],Fshape[2]))
+			ym = np.real(ifft2(HT*fft2(np.sum(B*(bHM - np.real(ifft2(HF,axes=(0,1)))),2))))
+			ym = params.gamma*ym[idx_m,idy_m]
+			yf = yf + params.lambda_T*xf
+			ym = ym + params.lambda_T*xm + params.lambda_R*(Rn * xm) # mask regularizers, TODO: rotation @
+			res = np.c_[yf,ym] + beta_tv4*(DTD @ fmfun) + params.beta_fm*fmfun # common regularizers/identity terms
+			return res
+		pdb.set_trace()
+		A = scipy.sparse.linalg.LinearOperator((f.shape[0],f.shape[0]), matvec=estimateFM_cg_Ax_dummy, matmat=estimateFM_cg_Ax)
+		fm, info = scipy.sparse.linalg.cg(A, np.c_[rhs1,rhs2], np.c_[f,m], params.cg_tol, params.cg_maxiter)
+		f = fm[:, :Fshape[2]]
+		m = fm[:, -1]
+
 
 	return F,M
 
@@ -135,7 +204,7 @@ def estimateH_motion(oI, oB, F, M, oHmask=None, state=None, params=None):
 			elif params.lp == 1:
 				temp = v_lp < params.alpha_h/params.beta_h
 				v_lp[temp] = 0 
-				v_lp[~temp] -= params.alpha_h/params.beta_h
+				v_lp[~temp] -= (params.alpha_h/params.beta_h)
 			elif params.lp == 0:
 				v_lp[v_lp <= np.sqrt(2*params.alpha_h/params.beta_h)] = 0
 			a_lp = a_lp + H - v_lp
@@ -203,6 +272,47 @@ def createDerivatives0(sz):
 	values = np.vstack((v2,-v1,v1,-v2))
 	Dy = sparse.csc_matrix((values.flatten(),(inds.flatten(),index.flatten())), shape=(N_out, N_in))
 	return Dx, Dy
+
+def project2pyramid(m, f, eps):
+	## projection of (m,f) values to feasible "pyramid"-like intersection of convex sets (roughly all positive, m<=1, m>=f)
+	maxiter = 10 # number of whole cycles, 0=only positivity
+
+	mf = np.concatenate((m[:,np.newaxis],f),1)
+	N = mf.shape[1] # number of conv sets
+	Z = np.zeros((mf.shape[0],mf.shape[1],N)) # auxiliary vars (sth like projection residuals)
+	normal = np.array([-1,eps]) / np.sqrt(1 + eps**2) # dividing plane normal vector (for projection to oblique planes)
+
+	for iter in range(N*maxiter+1): # always end with projection to the first set
+		mf_old = mf
+		idx = np.mod(iter,N) # set index
+		if idx == 0: # projection to f>0, 0<m<1
+			mf += Z[:,:,0]
+			mf[mf < 0] = 0 # f,m > 0
+			mf[mf[:,0] > 1,0] = 1 # m < 1
+		else: # one of the oblique sets
+			mf += Z[:,:,idx]
+			W = mf[:,idx]*eps > mf[:,0] # points outside of C_idx			
+			proj = (np.c_[mf[W,0],mf[W,idx]] @ normal) # projection to normal direction
+			mf[W,0] -= (normal[0] * proj)
+			mf[W,idx] -= (normal[1] * proj)
+		Z[:,:,idx] = mf_old + Z[:,:,idx] - mf # auxiliaries
+
+	m = mf[:,0]
+	f = mf[:,1:]
+	return m, f
+
+def lp_proximal_mapping(val_norm, amount, p):
+	## helper function for vector version of soft thresholding for l1 (lp) minimization
+	shrink_factor = np.zeros(val_norm.shape)
+	if p == 1: ## soft thresholding
+		nz = (val_norm > amount)
+		shrink_factor[nz] = (val_norm[nz]-amount) / val_norm[nz]
+	elif p == 1/2: # see eg "Computing the proximity operator of the lp norm..., Chen et al, IET Signal processing, 2016"
+		nz = val_norm > 3/2*(val_norm)**(2/3)
+		shrink_factor[nz] = (2/3*val_norm[nz]*(1+np.cos(2/3*np.acos(-3**(3/2)/4*amount*val_norm[nz]**(-3/2)))))/(val_norm[nz])
+	else:
+		raise Exception('not implemented!')
+	return shrink_factor
 
 def proj2simplex(Y):
 	## euclidean projection of y (arbitrarily shaped but treated as a single vector) to a simplex defined as x>=0 and sum(x(:)) = 1
