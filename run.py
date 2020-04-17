@@ -27,10 +27,9 @@ def main():
     Hmask = fmo_model(np.zeros(B.shape),H,np.repeat(M[:,:,np.newaxis],3,2),M)[:,:,0] > 0.01
     
     M0 = np.zeros(M.shape)
-    # He = estimateH(I, B, M, F, Hmask)
+    He = estimateH(I, B, M, F, Hmask)
     # Fe,Me = estimateFM(I,B,H,M0)
-
-    He,Fe,Me = estimateFMH(I, B, M0)
+    # He,Fe,Me = estimateFMH(I, B, M0)
 
     pdb.set_trace()
 
