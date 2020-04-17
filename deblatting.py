@@ -99,7 +99,7 @@ def estimateFM(I, B, H, M=None, F=None, F_T=None, M_T=None, oHmask=None, state=N
 	## init
 	Dx = None
 	if state is not None:
-		Dx = state.Dx; Dy = state.Dy; Rn = state.Rn
+		Dx = state.Dx; Dy = state.Dy; DTD = state.DTD; Rn = state.Rn
 		vx = state.vx; vy = state.vy; ax = state.ax; ay = state.ay
 		vx_m = state.vx_m; vy_m = state.vy_m; ax_m = state.ax_m; ay_m = state.ay_m
 		vf = state.vf; af = state.af; vm = state.vm; am = state.am 
@@ -231,7 +231,7 @@ def estimateFM(I, B, H, M=None, F=None, F_T=None, M_T=None, oHmask=None, state=N
 	if state is None:
 		return f_img,m_img
 	else:
-		state.Dx = Dx; state.Dy = Dy; state.Rn = Rn
+		state.Dx = Dx; state.Dy = Dy; state.DTD = DTD; state.Rn = Rn
 		state.vx = vx; state.vy = vy; state.ax = ax; state.ay = ay
 		state.vx_m = vx_m; state.vy_m = vy_m; state.ax_m = ax_m; state.ay_m = ay_m
 		state.vf = vf; state.af = af; state.vm = vm; state.am = am 
@@ -520,4 +520,5 @@ class StateFM:
 		self.am = 0
 		self.Dx = None
 		self.Dy = None
+		self.DTD = None
 		self.Rn = None
