@@ -59,7 +59,7 @@ def estimateFMH(I,B,M=None,F=None):
 
 		if True:
 			imshow(H/np.max(H),wkey=2)
-			imshow(np.r_[np.repeat(M[:,:,np.newaxis], 3, axis=2),F], 2, 6)
+			imshow(np.r_[np.repeat(M[:,:,np.newaxis], 3, axis=2),F], 2, 4)
 			print("FMH: iter={}, reldiff_h={}".format(iter, np.sqrt(reldiff2)))	
 
 		if reldiff2 < rel_tol2:
