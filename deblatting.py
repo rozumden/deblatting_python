@@ -35,12 +35,24 @@ class Params:
 		self.verbose = True #!
 
 
-def estimateFMH(I,B,M=None,F=None):
+def estimateFMH(oI,oB,M=None,F=None,oHmask=None):
 	## Estimate F,M,H in FMO equation I = H*F + (1 - H*M)B, where * is convolution
 	if M is None:
-		M = np.ones(I.shape[:2])
+		M = np.ones(oI.shape[:2])
 	if F is None:
-		F = np.ones((M.shape[0],M.shape[1],I.shape[2]))
+		F = np.ones((M.shape[0],M.shape[1],oI.shape[2]))
+	if oHmask is None:
+		Hmask = np.ones(oI.shape[:2]).astype(bool)
+		oHmask = Hmask
+		I = oI
+		B = oB
+	else: ## speed-up by padding and ROI
+		pads = np.ceil( (np.array(M.shape)-1)/2 ).astype(int)
+		rmin, rmax, cmin, cmax = boundingBox(oHmask, pads)
+		I = oI[rmin:rmax,cmin:cmax,:]
+		B = oB[rmin:rmax,cmin:cmax,:]
+		Hmask = oHmask[rmin:rmax,cmin:cmax]
+
 	H = np.zeros(I.shape[:2])
 	params = Params()
 	params.maxiter = 3
@@ -52,7 +64,7 @@ def estimateFMH(I,B,M=None,F=None):
 	for iter in range(params.loop_maxiter):
 		H_old = H
 
-		H, stateh = estimateH(I, B, M, F, state=stateh, params=params)
+		H, stateh = estimateH(I, B, M, F, oHmask=Hmask, state=stateh, params=params)
 		F, M, statefm = estimateFM(I, B, H, M, F, state=statefm, params=params)
 
 		reldiff2 = np.sum((H_old - H)**2) / np.sum(H**2)
@@ -65,7 +77,9 @@ def estimateFMH(I,B,M=None,F=None):
 		if reldiff2 < rel_tol2:
 			break
 
-	return H, F, M
+	He = np.zeros(oI.shape[:2])
+	He[oHmask] = H[Hmask]
+	return He, F, M
 
 def estimateFM(I, B, H, M=None, F=None, F_T=None, M_T=None, oHmask=None, state=None, params=None):
 	## Estimate F,M in FMO equation I = H*F + (1 - H*M)B, where * is convolution
@@ -250,12 +264,15 @@ def estimateH(oI, oB, M, F, oHmask=None, state=None, params=None):
 		I = oI
 		B = oB
 	else: ## speed-up by padding and ROI
-		pads = np.ceil( (np.array(M.shape)-1)/2 ).astype(int)
-		rmin, rmax, cmin, cmax = boundingBox(oHmask, pads)
-		I = oI[rmin:rmax,cmin:cmax,:]
-		B = oB[rmin:rmax,cmin:cmax,:]
-		Hmask = oHmask[rmin:rmax,cmin:cmax]
-
+		if state is None:
+			pads = np.ceil( (np.array(M.shape)-1)/2 ).astype(int)
+			rmin, rmax, cmin, cmax = boundingBox(oHmask, pads)
+			I = oI[rmin:rmax,cmin:cmax,:]
+			B = oB[rmin:rmax,cmin:cmax,:]
+			Hmask = oHmask[rmin:rmax,cmin:cmax]
+		else:
+			I = oI; B = oB; Hmask = oHmask
+			
 	H = None
 	if state is None:
 		v_lp = 0 ## init 
