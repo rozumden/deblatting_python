@@ -8,10 +8,10 @@ import pdb
 from utils import *
 
 class Params:
-	def __init__(self):
+	def __init__(self): ## Parameters with which users can experiment are marked by #!
 		## universal parameters
-		self.loop_maxiter = 100 # max number of (F,M)/H blind loop alternations  
-		self.maxiter = 10 # max number of outer iterations
+		self.loop_maxiter = 100 #! max number of (F,M)/H blind loop alternations  
+		self.maxiter = 10 #! max number of outer iterations
 		self.cg_maxiter = 25 # max number of inner CG iterations ('h' subproblem)
 		self.rel_tol = 2e-3 # relative between iterations difference for outer ADMM loop
 		self.cg_tol = 1e-5 # tolerance for relative residual of inner CG iterations 
@@ -22,42 +22,73 @@ class Params:
 		self.beta_h = 1e3*self.alpha_h
 		self.sum1 = True # force sum(H)=1 constraint (via beta_h), takes precedence over lp
 		## parameters for F,M estimation
-		self.alpha_f = 0*2e-12 # F,M total variation regularizer weight
+		self.alpha_f = 2e-12 #! F,M total variation regularizer weight
+		self.lambda_T = 1e-3 #! template L2 term weight, influence: 1e-3 soft, 1e-2 strong, 1e-1 very strong
+		self.lambda_R = 0*1e-3 #! mask rotation symmetry weight term, lambda_R*|R*m-m|^2 where R is approx rotational averaging, similar values as *_T
 		self.beta_f = 10*self.alpha_f # splitting vx/vy=Df due to the TV regularizer
 		self.beta_fm = 1e-3 # splitting vf=f and vm=m due to (F,M) in C constraint where C is prescribed convex set given by positivity and F-M relation, penalty weight
-		self.pyramid_eps = 0 # inverse slope of the f<=m/eps constraing for each channel. eps=0 means no constraint (only m in [0,1], f>0), eps=1 means f<=m etc
-		self.lambda_T = 0 # template L2 term weight
-		self.lambda_R = 0 # mask rotation symmetry weight term, lambda_R*|R*m-m|^2 where R is approx rotational averaging, e.g. 1e-2
-		## parameters for sub-frame F,M estimation
-		self.alpha_cross_f = 2^-12 # cross-image (in 3-dim) image TV regularizer weight 
+		self.pyramid_eps = 1 # inverse slope of the f<=m/eps constraing for each channel. eps=0 means no constraint (only m in [0,1], f>0), eps=1 means f<=m etc
+		## parameters for sub-frame F,M estimation TODO
+		self.alpha_cross_f = 2^-12 #! cross-image (in 3-dim) image TV regularizer weight 
 		self.beta_cross_f = 10*self.alpha_cross_f # splitting vc=D_cross*f due to cross-image TV regularizer
 		## visualization parameters 
-		self.verbose = True
-
-class StateH:
-	def __init__(self):
-		self.H = []
-		self.a_lp = []
-		self.v_lp = []
+		self.verbose = True #!
 
 
-def estimateFM_motion(I, B, H, M, F=None, F_T=0, M_T=0, oHmask=None, state=None, params=None):
+def estimateFMH(I,B,M=None,F=None):
+	## Estimate F,M,H in FMO equation I = H*F + (1 - H*M)B, where * is convolution
+	if M is None:
+		M = np.ones(I.shape[:2])
+	if F is None:
+		F = np.ones((M.shape[0],M.shape[1],I.shape[2]))
+	H = np.zeros(I.shape[:2])
+	params = Params()
+	params.maxiter = 3
+	params.verbose = False
+	rel_tol2 = params.rel_tol**2
+	stateh = StateH()
+	statefm = StateFM()
+	## blind loop, iterate over estimateFM and estimateH
+	for iter in range(params.loop_maxiter):
+		H_old = H
+
+		H, stateh = estimateH(I, B, M, F, state=stateh, params=params)
+		F, M, statefm = estimateFM(I, B, H, M, F, state=statefm, params=params)
+
+		reldiff2 = np.sum((H_old - H)**2) / np.sum(H**2)
+
+		if True:
+			imshow(H/np.max(H),wkey=2)
+			imshow(np.r_[np.repeat(M[:,:,np.newaxis], 3, axis=2),F], 2, 6)
+			print("FMH: iter={}, reldiff_h={}".format(iter, np.sqrt(reldiff2)))	
+
+		if reldiff2 < rel_tol2:
+			break
+
+	return H, F, M
+
+def estimateFM(I, B, H, M=None, F=None, F_T=None, M_T=None, oHmask=None, state=None, params=None):
 	## Estimate F,M in FMO equation I = H*F + (1 - H*M)B, where * is convolution
-	## M is needed to know approximate object size, can be array of zeros
+	## M is suggested to be specified to know approximate object size, at least as am array of zeros, for speed-up
 	## F_T, M_T - template for F and M
 	if params is None:
 		params = Params()
 	if oHmask is None:
 		Hmask = np.ones(I.shape[:2]).astype(bool)
+	if M is None:
+		if F is not None:
+			M = np.zeros(F.shape[:2])
+		else:
+			M = np.zeros(I.shape[:2])
 	if F is None:
 		F = np.zeros((M.shape[0],M.shape[1],3))
 
 	Fshape = F.shape
 	f = vec3(F)
 	m = M.flatten()
-	if F_T != 0:
+	if F_T is not None:
 		F_T = vec3(F_T)
-	if M_T != 0:
+	if M_T is not None:
 		M_T = M_T.flatten()
 	Me = np.zeros(I.shape[:2])
 	Fe = np.zeros(I.shape)
@@ -66,26 +97,27 @@ def estimateFM_motion(I, B, H, M, F=None, F_T=0, M_T=0, oHmask=None, state=None,
 	idx_m, idy_m = psfshift_idx(M.shape, I.shape[:2])
 
 	## init
-	Dx, Dy = createDerivatives0(Fshape)
-	DTD = (Dx.T @ Dx) + (Dy.T @ Dy)
-	vx = np.zeros((Dx.shape[0],Fshape[2]))
-	vy = np.zeros((Dy.shape[0],Fshape[2]))
-	ax = 0 ## v=Df splitting due to TV and its assoc. Lagr. mult.
-	ay = 0
-	vx_m = np.zeros((Dx.shape[0],1))
-	vy_m = np.zeros((Dy.shape[0],1))
-	ax_m = 0 ## v_m=Dm splitting due to TV (m-part) and its assoc. Lagr. mult.
-	ay_m = 0 
-	
-	vf = 0 ## vf=f splitting due to positivity and f=0 outside mask constraint
-	af = 0 
-	vm = 0 ## vm=m splitting due to mask between [0,1]
-	am = 0 
-	if params.lambda_R > 0: ## TODO
-		Rn = createRnMatrix(Fshape[:2])
-		Rn = Rn.T @ Rn - Rn.T - Rn + sparse.eye(Rn.shape)
-	else:
-		Rn = 0
+	Dx = None
+	if state is not None:
+		Dx = state.Dx; Dy = state.Dy; Rn = state.Rn
+		vx = state.vx; vy = state.vy; ax = state.ax; ay = state.ay
+		vx_m = state.vx_m; vy_m = state.vy_m; ax_m = state.ax_m; ay_m = state.ay_m
+		vf = state.vf; af = state.af; vm = state.vm; am = state.am 
+	if Dx is None:
+		Dx, Dy = createDerivatives0(Fshape)
+		DTD = (Dx.T @ Dx) + (Dy.T @ Dy)
+		vx = np.zeros((Dx.shape[0],Fshape[2]))
+		vy = np.zeros((Dy.shape[0],Fshape[2]))
+		ay = 0; ax = 0 ## v=Df splitting due to TV and its assoc. Lagr. mult.
+		vx_m = np.zeros((Dx.shape[0],1))
+		vy_m = np.zeros((Dy.shape[0],1))
+		ay_m = 0; ax_m = 0 ## v_m=Dm splitting due to TV (m-part) and its assoc. Lagr. mult.
+		af = 0; vf = 0 ## vf=f splitting due to positivity and f=0 outside mask constraint
+		am = 0; vm = 0 ## vm=m splitting due to mask between [0,1]
+		if params.lambda_R > 0: 
+			RnA = createRnMatrix(Fshape[:2]).A
+			Rn = RnA.T @ RnA - RnA.T - RnA + np.eye(RnA.shape[0])
+			Rn = sparse.csc_matrix(Rn)
 
 	fH = fft2(H,axes=(0,1)) # precompute FT
 	HT = np.conj(fH) 
@@ -93,22 +125,20 @@ def estimateFM_motion(I, B, H, M, F=None, F_T=0, M_T=0, oHmask=None, state=None,
 	## precompute const RHS for 'f/m' subproblem
 	rhs_f = np.real(ifft2(HT3*fft2(I-B,axes=(0,1)),axes=(0,1)))
 	rhs_f = params.gamma*np.reshape(rhs_f[idx_f,idy_f,idz_f], (-1,Fshape[2]))
-	rhs_f += (params.lambda_T*F_T) ## template matching term lambda_T*|F-F_T|  
+	if params.lambda_T > 0 and F_T is not None:
+		rhs_f += (params.lambda_T*F_T) ## template matching term lambda_T*|F-F_T|  
 	rhs_m = np.real(ifft2(HT*fft2(np.sum(B*(I-B),2),axes=(0,1)),axes=(0,1)))
-	rhs_m = -params.gamma*rhs_m[idx_m,idy_m] + params.lambda_T*M_T ## template matching term lambda_T*|M-M_T|  
-
-	fdx = Dx @ f
-	fdy = Dy @ f
-	mdx = Dx @ m
-	mdy = Dy @ m
+	rhs_m = -params.gamma*rhs_m[idx_m,idy_m] 
+	if params.lambda_T > 0 and M_T is not None:
+		rhs_m += (params.lambda_T*M_T) ## template matching term lambda_T*|M-M_T|  
+	
 	beta_tv4 = np.repeat(params.beta_f, Fshape[2]+1)
 	rel_tol2 = params.rel_tol**2
-	
 	## ADMM loop
 	for iter in range(params.maxiter):
-		f_old = f
-		m_old = m
-
+		fdx = Dx @ f; fdy = Dy @ f
+		mdx = Dx @ m; mdy = Dy @ m
+		f_old = f; m_old = m
 		## dual/auxiliary var updates, vx/vy minimization (splitting due to TV regularizer)
 		if params.alpha_f > 0 and params.beta_f > 0:
 			val_x = fdx + ax
@@ -149,14 +179,18 @@ def estimateFM_motion(I, B, H, M, F=None, F_T=0, M_T=0, oHmask=None, state=None,
 			xm = fmfun[:,-1]
 			Fe[idx_f,idy_f,idz_f] = xf.flatten()
 			Me[idx_m,idy_m] = xm
-			HF = H[:,:,np.newaxis]*fft2(Fe,axes=(0,1))
-			bHM = B*(np.real(ifft2(H*fft2(Me,axes=(0,1)),axes=(0,1)))[:,:,np.newaxis])
+			HF = fH[:,:,np.newaxis]*fft2(Fe,axes=(0,1))
+			bHM = B*(np.real(ifft2(fH*fft2(Me,axes=(0,1)),axes=(0,1)))[:,:,np.newaxis])
 			yf = np.real(ifft2(HT3*(HF - fft2(bHM,axes=(0,1))),axes=(0,1)))
 			yf = params.gamma*np.reshape(yf[idx_f,idy_f,idz_f],(-1,Fshape[2]))
 			ym = np.real(ifft2(HT*fft2(np.sum(B*(bHM - np.real(ifft2(HF,axes=(0,1)))),2),axes=(0,1)),axes=(0,1)))
 			ym = params.gamma*ym[idx_m,idy_m]
-			yf = yf + params.lambda_T*xf
-			ym = ym + params.lambda_T*xm + params.lambda_R*(Rn * xm) # mask regularizers, TODO: rotation @
+			if params.lambda_T > 0 and F_T is not None:
+				yf = yf + params.lambda_T*xf
+			if params.lambda_T > 0 and M_T is not None:
+				ym = ym + params.lambda_T*xm 
+			if params.lambda_R > 0: 
+				ym = ym + params.lambda_R*(Rn @ xm) # mask regularizers
 			res = np.c_[yf,ym] + beta_tv4*(DTD @ fmfun) + params.beta_fm*fmfun # common regularizers/identity terms
 			return res.flatten()
 		A = scipy.sparse.linalg.LinearOperator((4*f.shape[0],4*f.shape[0]), matvec=estimateFM_cg_Ax)
@@ -165,11 +199,6 @@ def estimateFM_motion(I, B, H, M, F=None, F_T=0, M_T=0, oHmask=None, state=None,
 		f = fm[:, :Fshape[2]]
 		m = fm[:, -1]
 
-		fdx = Dx @ f
-		fdy = Dy @ f
-		mdx = Dx @ m
-		mdy = Dy @ m
-
 		ff = f.flatten()
 		df = ff-f_old.flatten()
 		dm = m-m_old
@@ -177,15 +206,19 @@ def estimateFM_motion(I, B, H, M, F=None, F_T=0, M_T=0, oHmask=None, state=None,
 		rel_diff2_m = (dm @ dm)/(m @ m)
 		
 		if params.verbose:
-			# f_img = ivec3(f, Fshape)
-			# m_img = ivec3(m, Fshape[:2])
+			# f_img = ivec3(f, Fshape); m_img = ivec3(m, Fshape[:2])
+			# imshow(np.r_[np.repeat(m_img[:,:,np.newaxis], 3, axis=2),f_img], 1, 6)
 			# pdb.set_trace()
-			if True: # calculate cost 
+			if False: # calculate cost, ot fully implemented for all terms, e.g. lambda_R
 				Fe[idx_f,idy_f,idz_f] = ff
 				Me[idx_m,idy_m] = m
-				err = np.sum(np.reshape(np.real(ifft2(H[:,:,np.newaxis]*fft2(Fe,axes=(0,1)),axes=(0,1)))-B*np.real(ifft2(H*fft2(Me)))[:,:,np.newaxis]-(I-B), (-1,1))**2)
+				err = np.sum(np.reshape(np.real(ifft2(fH[:,:,np.newaxis]*fft2(Fe,axes=(0,1)),axes=(0,1)))-B*np.real(ifft2(fH*fft2(Me)))[:,:,np.newaxis]-(I-B), (-1,1))**2)
 				cost = (params.gamma/2)*err + params.alpha_f*np.sum(np.sqrt(fdx**2+fdy**2))
-				cost = cost + params.alpha_f*np.sum(np.sqrt(mdx**2+mdy**2)) + params.lambda_T*np.sum((f-F_T)**2)/2 + np.sum(params.lambda_T*(m-M_T)**2)/2
+				cost = cost + params.alpha_f*np.sum(np.sqrt(mdx**2+mdy**2)) 
+				if F_T is not None:
+					cost = cost + params.lambda_T*np.sum((f-F_T)**2)/2 
+				if M_T is not None:
+					cost = cost + np.sum(params.lambda_T*(m-M_T)**2)/2
 				print("FM: iter={}, reldiff=({}, {}), err={}, cost={}".format(iter, np.sqrt(rel_diff2_f), np.sqrt(rel_diff2_m),err,cost))	
 			else:
 				print("FM: iter={}, reldiff=({}, {})".format(iter, np.sqrt(rel_diff2_f), np.sqrt(rel_diff2_m)))	
@@ -195,9 +228,16 @@ def estimateFM_motion(I, B, H, M, F=None, F_T=0, M_T=0, oHmask=None, state=None,
 
 	f_img = ivec3(f, Fshape)
 	m_img = ivec3(m, Fshape[:2])
-	return f_img,m_img
+	if state is None:
+		return f_img,m_img
+	else:
+		state.Dx = Dx; state.Dy = Dy; state.Rn = Rn
+		state.vx = vx; state.vy = vy; state.ax = ax; state.ay = ay
+		state.vx_m = vx_m; state.vy_m = vy_m; state.ax_m = ax_m; state.ay_m = ay_m
+		state.vf = vf; state.af = af; state.vm = vm; state.am = am 
+		return f_img,m_img,state
 
-def estimateH_motion(oI, oB, F, M, oHmask=None, state=None, params=None):
+def estimateH(oI, oB, M, F, oHmask=None, state=None, params=None):
 	## Estimate H in FMO equation I = H*F + (1 - H*M)B, where * is convolution
 	## Hmask represents a region in which computations are done
 	if oI.shape != oB.shape:
@@ -205,7 +245,8 @@ def estimateH_motion(oI, oB, F, M, oHmask=None, state=None, params=None):
 	if params is None:
 		params = Params()
 	if oHmask is None:
-		Hmask = np.ones(I.shape[:2]).astype(bool)
+		Hmask = np.ones(oI.shape[:2]).astype(bool)
+		oHmask = Hmask
 		I = oI
 		B = oB
 	else: ## speed-up by padding and ROI
@@ -215,10 +256,18 @@ def estimateH_motion(oI, oB, F, M, oHmask=None, state=None, params=None):
 		B = oB[rmin:rmax,cmin:cmax,:]
 		Hmask = oHmask[rmin:rmax,cmin:cmax]
 
-	H = np.zeros((np.count_nonzero(Hmask),))
+	H = None
+	if state is None:
+		v_lp = 0 ## init 
+		a_lp = 0 
+	else:
+		H = state.H
+		v_lp = state.v_lp
+		a_lp = state.a_lp
 
-	v_lp = 0 ## init 
-	a_lp = 0 
+	if H is None:
+		H = np.zeros((np.count_nonzero(Hmask),))
+
 	hsize = Hmask.shape
 
 	iF = fft2(psfshift(F, hsize),axes=(0,1))
@@ -288,8 +337,13 @@ def estimateH_motion(oI, oB, F, M, oHmask=None, state=None, params=None):
 
 	oHe = np.zeros(oHmask.shape)
 	oHe[oHmask] = H
-
-	return oHe
+	if state is None:
+		return oHe
+	else:
+		state.a_lp = a_lp
+		state.v_lp = v_lp
+		state.H = H
+		return oHe, state
 
 def createDerivatives0(sz):
 	N_in = sz[0] * sz[1]
@@ -311,6 +365,33 @@ def createDerivatives0(sz):
 	values = np.vstack((v2,-v1,v1,-v2))
 	Dy = sparse.csc_matrix((values.flatten(),(inds.flatten(),index.flatten())), shape=(N_out, N_in))
 	return Dx, Dy
+
+def createRnMatrix(img_sz, angles=None):
+	if angles is None:
+		angles = np.array([16, 25, 78, 152])/180*np.pi # selected set of angles
+	img_sz = np.array(img_sz[:2])
+	idx2, idx1 = np.meshgrid(range(img_sz[1]), range(img_sz[0]))
+	offset = (img_sz + 1)/2  # offset between indices and coordinates 
+	idx = np.c_[idx1.T.flatten()+1, idx2.T.flatten()+1] - offset
+	idx_out = np.zeros((0,)).astype(int)
+	idx_in = np.zeros((0,)).astype(int)
+	for ki in range(len(angles)): # no antialiasing, NN 'interpolation'
+		ca = np.cos(angles[ki]) 
+		sa = np.sin(angles[ki])
+		R = np.array([[ca, -sa], [sa, ca]]) # rotates by angle; R.' rotates by -angle
+		res = np.round(idx @ R + offset).astype(int) # input indices (rotated)
+		keep = np.all(np.logical_and(res >= 1, res <= img_sz),1) # crop to image dimensions
+		idx_out = np.r_[idx_out, np.nonzero(keep)[0]] # recalculate to linear indices
+		res -= 1
+		idx_in = np.r_[idx_in, res[keep,0]*img_sz[0] + res[keep,1] ]
+
+	values = np.repeat(1/len(angles),idx_in.shape[0])
+	R = sparse.csc_matrix((values,(idx_out,idx_in)), shape=(np.prod(img_sz), np.prod(img_sz)))
+	
+	temp = np.sum(R,1)
+	ww = np.nonzero(temp > 0)[0]
+	R[ww,:] = R[ww,:] / temp[ww] # averaging
+	return R
 
 def project2pyramid(m, f, eps):
 	## projection of (m,f) values to feasible "pyramid"-like intersection of convex sets (roughly all positive, m<=1, m>=f)
@@ -416,3 +497,27 @@ def vec3(I):
 
 def ivec3(I, ishape):
 	return np.reshape(I, ishape)
+
+class StateH:
+	def __init__(self):
+		self.H = None
+		self.a_lp = 0
+		self.v_lp = 0
+
+class StateFM:
+	def __init__(self):
+		self.vx = 0
+		self.vy = 0
+		self.ax = 0
+		self.ay = 0
+		self.vx_m = 0
+		self.vy_m = 0
+		self.ax_m = 0
+		self.ay_m = 0
+		self.vf = 0
+		self.af = 0
+		self.vm = 0
+		self.am = 0
+		self.Dx = None
+		self.Dy = None
+		self.Rn = None
