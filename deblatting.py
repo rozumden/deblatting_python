@@ -10,7 +10,7 @@ from utils import *
 class Params:
 	def __init__(self): ## Parameters with which users can experiment are marked by #!
 		## universal parameters
-		self.loop_maxiter = 100 #! max number of (F,M)/H blind loop alternations  
+		self.loop_maxiter = 10 #! max number of (F,M)/H blind loop alternations  
 		self.maxiter = 10 #! max number of outer iterations
 		self.cg_maxiter = 25 # max number of inner CG iterations ('h' subproblem)
 		self.rel_tol = 2e-3 # relative between iterations difference for outer ADMM loop
@@ -35,21 +35,21 @@ class Params:
 		self.verbose = True #!
 
 
-def estimateFMH(I,B,M=None,F=None,oHmask=None):
+def estimateFMH(I,B,M=None,F=None,Hmask=None):
 	## Estimate F,M,H in FMO equation I = H*F + (1 - H*M)B, where * is convolution
 	if M is None:
 		M = np.ones(I.shape[:2])
 	if F is None:
 		F = np.ones((M.shape[0],M.shape[1],I.shape[2]))
-	if oHmask is None:
+	if Hmask is None:
 		Hmask = np.ones(I.shape[:2]).astype(bool)
-		oHmask = Hmask
+		Hmask_small = Hmask
 	else: ## speed-up by padding and ROI
 		pads = np.ceil( (np.array(M.shape)-1)/2 ).astype(int)
-		rmin, rmax, cmin, cmax = boundingBox(oHmask, pads)
+		rmin, rmax, cmin, cmax = boundingBox(Hmask, pads)
 		I = I[rmin:rmax,cmin:cmax,:]
 		B = B[rmin:rmax,cmin:cmax,:]
-		Hmask = oHmask[rmin:rmax,cmin:cmax]
+		Hmask_small = Hmask[rmin:rmax,cmin:cmax]
 
 	H = np.zeros(I.shape[:2])
 	params = Params()
@@ -62,7 +62,7 @@ def estimateFMH(I,B,M=None,F=None,oHmask=None):
 	for iter in range(params.loop_maxiter):
 		H_old = H
 
-		H, stateh = estimateH(I, B, M, F, oHmask=Hmask, state=stateh, params=params)
+		H, stateh = estimateH(I, B, M, F, oHmask=Hmask_small, state=stateh, params=params)
 		F, M, statefm = estimateFM(I, B, H, M, F, state=statefm, params=params)
 
 		reldiff2 = np.sum((H_old - H)**2) / np.sum(H**2)
@@ -75,8 +75,8 @@ def estimateFMH(I,B,M=None,F=None,oHmask=None):
 		if reldiff2 < rel_tol2:
 			break
 
-	He = np.zeros(oI.shape[:2])
-	He[oHmask] = H[Hmask]
+	He = np.zeros(Hmask.shape[:2])
+	He[Hmask] = H[Hmask_small]
 	return He, F, M
 
 def estimateFM(I, B, H, M=None, F=None, F_T=None, M_T=None, oHmask=None, state=None, params=None):

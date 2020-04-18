@@ -29,7 +29,7 @@ def main():
     M0 = np.zeros(M.shape)
     # He = estimateH(I, B, M, F, Hmask)
     # Fe,Me = estimateFM(I,B,H,M0)
-    He,Fe,Me = estimateFMH(I, B, M0, oHmask=Hmask)
+    He,Fe,Me = estimateFMH(I, B, M0, Hmask=Hmask)
 
     pdb.set_trace()
 
