@@ -19,19 +19,43 @@ def parse_args():
 def main():
     args = parse_args()
     
-    test_real(os.path.join('imgs','vol1.png'), os.path.join('imgs','vol_bgr.png'))
+    test_out(os.path.join('imgs','out1.png'), os.path.join('imgs','out_bgr.png'))
+    # test_real(os.path.join('imgs','floorball1.png'), os.path.join('imgs','floorball_bgr.png'))
+    # test_real(os.path.join('imgs','floorball2.png'), os.path.join('imgs','floorball_bgr.png'))
+    # test_real(os.path.join('imgs','vol1.png'), os.path.join('imgs','vol_bgr.png'))
     # test_real(os.path.join('imgs','vol2.png'), os.path.join('imgs','vol_bgr.png'))
     test_synthetic()
+
+def test_out(I_path, B_path):
+    I = cv2.imread(I_path)/255
+    B = cv2.imread(B_path)/255
+    fc = [1.9, 1, 1.8]
+    for ki in range(3):
+        I[:,:,ki] *= fc[ki]
+        B[:,:,ki] *= fc[ki]
+    bbox, diameter = fmo_detect(I,B)
+    ext = int(np.round(0.5*diameter))
+    I = I[bbox[0]-ext:bbox[2]+ext,bbox[1]-ext:bbox[3]+ext,:]
+    B = B[bbox[0]-ext:bbox[2]+ext,bbox[1]-ext:bbox[3]+ext,:]
+    M0 = np.ones([int(np.round(diameter))]*2)
+    H,F,M = estimateFMH(I, B, M0)
+    H /= np.max(H)
+
+    pdb.set_trace()
+    # fc = [1.9 1 1.8];
+    # WB = [2 1 2]; gamma_coef = 0.4;
+
+    # for k = 1:3, matF(:,:,k,:) = matF(:,:,k,:) ./ fc(k); end
+    # matF = ((matF.*reshape(WB,1,1,[])/(max(WB))).^gamma_coef);
 
 def test_real(I_path, B_path):    
     I = cv2.imread(I_path)/255
     B = cv2.imread(B_path)/255
-    bbox = fmo_detect(I,B)
-    ext = 10
+    bbox, diameter = fmo_detect(I,B)
+    ext = int(np.round(0.5*diameter))
     I = I[bbox[0]-ext:bbox[2]+ext,bbox[1]-ext:bbox[3]+ext,:]
     B = B[bbox[0]-ext:bbox[2]+ext,bbox[1]-ext:bbox[3]+ext,:]
-    diameter = int(np.round(0.99*(np.min(I.shape[:2]) - 2*ext)))
-    M0 = np.ones([diameter]*2)
+    M0 = np.ones([int(np.round(1.1*diameter))]*2)
     H,F,M = estimateFMH(I, B, M0)
     H /= np.max(H)
 

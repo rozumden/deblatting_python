@@ -39,12 +39,13 @@ def fmo_detect(I,B):
 	labeled = label(dI)
 	regions = regionprops(labeled)
 	ind = -1
+	maxsol = 0
 	for ki in range(len(regions)):
-		if regions[ki].area > 100 and regions[ki].area < 0.01*np.prod(dI.shape) and regions[ki].solidity > 0.85:
-			## TODO: can be improved to take the one with highest solidity
-			ind = ki
-			break
-	return regions[ind].bbox
+		if regions[ki].area > 100 and regions[ki].area < 0.01*np.prod(dI.shape):
+			if regions[ki].solidity > maxsol:
+				ind = ki
+				maxsol = regions[ki].solidity
+	return regions[ind].bbox, regions[ind].minor_axis_length
 
 def fmo_model(B,H,F,M):
 	M3 = np.repeat(M[:, :, np.newaxis], 3, axis=2)

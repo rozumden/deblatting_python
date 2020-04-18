@@ -10,7 +10,7 @@ from utils import *
 class Params:
 	def __init__(self): ## Parameters with which users can experiment are marked by #!
 		## universal parameters
-		self.loop_maxiter = 200 #! max number of (F,M)/H blind loop alternations  
+		self.loop_maxiter = 50 #! max number of (F,M)/H blind loop alternations  
 		self.maxiter = 10 #! max number of outer iterations
 		self.cg_maxiter = 25 # max number of inner CG iterations ('h' subproblem)
 		self.rel_tol = 2e-3 # relative between iterations difference for outer ADMM loop
@@ -64,23 +64,46 @@ def estimateFMH(I,B,M=None,F=None,Hmask=None):
 	## blind loop, iterate over estimateFM and estimateH
 	for iter in range(params.loop_maxiter):
 		H_old = H
-
 		H, stateh = estimateH(I, B, M, F, Hmask=Hmask_small, state=stateh, params=params)
 		F, M, statefm = estimateFM(I, B, H, M, F, state=statefm, params=params)
-
 		reldiff2 = np.sum((H_old - H)**2) / np.sum(H**2)
-
 		if params.visualize:
 			imshow_nodestroy(get_visim(H,F,M,I), 600/np.max(I.shape))
 		if params.verbose:
 			print("FMH: iter={}, reldiff_h={}".format(iter+1, np.sqrt(reldiff2)))	
-
 		if reldiff2 < rel_tol2:
 			break
 
+	pdb.set_trace()
+	Hf = psffit(H)
+
 	He = np.zeros(Hmask.shape[:2])
 	He[Hmask] = H[Hmask_small]
+
+
 	return He, F, M
+
+def psffit(H):
+	bH = (H/np.max(H) > 0.4)
+	x, y = np.nonzero(bH)
+	pdb.set_trace()
+	res1 = np.polyfit(x, y, 3, full=True)
+	res2 = np.polyfit(y, x, 3, full=True)
+	if res1[1][0] < res2[1][0]:
+		coeffs = res1[0]
+		xs = [np.min(x), np.max(x)]
+		poly1d_fn = np.poly1d(coeffs) 
+		ys = poly1d_fn(xs)
+	else:
+		coeffs = res2[0]
+		ys = [np.min(y), np.max(y)]
+		poly1d_fn = np.poly1d(coeffs) 
+		xs = poly1d_fn(ys)
+	
+	pars = np.array([[xs[0], ys[0]], [xs[1]-xs[0], ys[1]-ys[0]]]).T
+	Hf = renderTraj(pars, np.zeros(H.shape))
+	Hf /= np.sum(Hf)
+	return Hf
 
 def estimateFM(I, B, H, M=None, F=None, F_T=None, M_T=None, state=None, params=None):
 	## Estimate F,M in FMO equation I = H*F + (1 - H*M)B, where * is convolution
