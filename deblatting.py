@@ -10,7 +10,7 @@ from utils import *
 class Params:
 	def __init__(self): ## Parameters with which users can experiment are marked by #!
 		## universal parameters
-		self.loop_maxiter = 100 #! max number of (F,M)/H blind loop alternations  
+		self.loop_maxiter = 200 #! max number of (F,M)/H blind loop alternations  
 		self.maxiter = 10 #! max number of outer iterations
 		self.cg_maxiter = 25 # max number of inner CG iterations ('h' subproblem)
 		self.rel_tol = 2e-3 # relative between iterations difference for outer ADMM loop
@@ -24,7 +24,7 @@ class Params:
 		## parameters for F,M estimation
 		self.alpha_f = 2e-12 #! F,M total variation regularizer weight, for strong influence use at least 2e-4
 		self.lambda_T = 1e-3 #! template L2 term weight, influence: 1e-3 soft, 1e-2 strong, 1e-1 very strong
-		self.lambda_R = 1e-3 #! mask rotation symmetry weight term, lambda_R*|R*m-m|^2 where R is approx rotational averaging, similar values as *_T
+		self.lambda_R = 1e-2 #! mask rotation symmetry weight term, lambda_R*|R*m-m|^2 where R is approx rotational averaging, similar values as *_T
 		self.beta_fm = 1e-3 # splitting vf=f and vm=m due to (F,M) in C constraint where C is prescribed convex set given by positivity and F-M relation, penalty weight
 		self.beta_f = 10*self.alpha_f # splitting vx/vy=Df due to the TV regularizer
 		self.pyramid_eps = 1 # inverse slope of the f<=m/eps constraing for each channel. eps=0 means no constraint (only m in [0,1], f>0), eps=1 means f<=m etc
@@ -34,7 +34,7 @@ class Params:
 		## visualization parameters 
 		self.verbose = True #!
 		self.do_cost = False #!
-		self.visualize = False #!
+		self.visualize = True #!
 
 
 def estimateFMH(I,B,M=None,F=None,Hmask=None):
@@ -71,8 +71,7 @@ def estimateFMH(I,B,M=None,F=None,Hmask=None):
 		reldiff2 = np.sum((H_old - H)**2) / np.sum(H**2)
 
 		if params.visualize:
-			imshow(H/np.max(H),wkey=0.5)
-			imshow(np.r_[np.repeat(M[:,:,np.newaxis], 3, axis=2),F], 0.5, 4)
+			imshow_nodestroy(get_visim(H,F,M,I), 600/np.max(I.shape))
 		if params.verbose:
 			print("FMH: iter={}, reldiff_h={}".format(iter+1, np.sqrt(reldiff2)))	
 
@@ -213,16 +212,19 @@ def estimateFM(I, B, H, M=None, F=None, F_T=None, M_T=None, state=None, params=N
 		f = fm[:, :Fshape[2]]
 		m = fm[:, -1]
 
+		if state is not None:
+			continue
+
 		ff = f.flatten()
 		df = ff-f_old.flatten()
 		dm = m-m_old
 		rel_diff2_f = (df @ df)/(ff @ ff)
 		rel_diff2_m = (dm @ dm)/(m @ m)
 		
-		if params.visualize and params.maxiter > 1:
+		if params.visualize:
 			f_img = ivec3(f, Fshape); m_img = ivec3(m, Fshape[:2])
-			imshow(np.r_[np.repeat(m_img[:,:,np.newaxis], 3, axis=2),f_img], 1, 6)
-		if params.verbose and params.maxiter > 1:
+			imshow_nodestroy(get_visim(H,f_img,m_img,I), 600/np.max(I.shape))
+		if params.verbose:
 			if params.do_cost: # not fully implemented for all terms, e.g. lambda_R
 				Fe[idx_f,idy_f,idz_f] = ff
 				Me[idx_m,idy_m] = m
@@ -325,14 +327,15 @@ def estimateH(I, B, M, F, Hmask=None, state=None, params=None):
 		A = scipy.sparse.linalg.LinearOperator((H.shape[0],H.shape[0]), matvec=estimateH_cg_Ax)
 		H, info = scipy.sparse.linalg.cg(A, rhs, H, params.cg_tol, params.cg_maxiter)
 
+		if state is not None:
+			continue
+
 		Diff = (H - H_old)
 		rel_diff2 = (Diff @ Diff)/(H @ H)
 
-		if params.visualize and params.maxiter > 1:
-			He[Hmask_small] = H
-			He /= np.max(He)
-			imshow(He)
-		if params.verbose and params.maxiter > 1:
+		if params.visualize:
+			imshow_nodestroy(get_visim(He,F,M,I), 600/np.max(I.shape))
+		if params.verbose:
 			if params.do_cost:
 				FH = fft2(He,axes=(0,1))
 				FH3 = np.repeat(FH[:, :, np.newaxis], 3, axis=2)
