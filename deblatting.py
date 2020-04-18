@@ -22,11 +22,11 @@ class Params:
 		self.beta_h = 1e3*self.alpha_h
 		self.sum1 = True # force sum(H)=1 constraint (via beta_h), takes precedence over lp
 		## parameters for F,M estimation
-		self.alpha_f = 2e-12 #! F,M total variation regularizer weight
+		self.alpha_f = 2e-12 #! F,M total variation regularizer weight, for strong influence use at least 2e-4
 		self.lambda_T = 1e-3 #! template L2 term weight, influence: 1e-3 soft, 1e-2 strong, 1e-1 very strong
-		self.lambda_R = 0*1e-3 #! mask rotation symmetry weight term, lambda_R*|R*m-m|^2 where R is approx rotational averaging, similar values as *_T
-		self.beta_f = 10*self.alpha_f # splitting vx/vy=Df due to the TV regularizer
+		self.lambda_R = 1e-3 #! mask rotation symmetry weight term, lambda_R*|R*m-m|^2 where R is approx rotational averaging, similar values as *_T
 		self.beta_fm = 1e-3 # splitting vf=f and vm=m due to (F,M) in C constraint where C is prescribed convex set given by positivity and F-M relation, penalty weight
+		self.beta_f = 10*self.alpha_f # splitting vx/vy=Df due to the TV regularizer
 		self.pyramid_eps = 1 # inverse slope of the f<=m/eps constraing for each channel. eps=0 means no constraint (only m in [0,1], f>0), eps=1 means f<=m etc
 		## parameters for sub-frame F,M estimation TODO
 		self.alpha_cross_f = 2^-12 #! cross-image (in 3-dim) image TV regularizer weight 
@@ -35,27 +35,25 @@ class Params:
 		self.verbose = True #!
 
 
-def estimateFMH(oI,oB,M=None,F=None,oHmask=None):
+def estimateFMH(I,B,M=None,F=None,oHmask=None):
 	## Estimate F,M,H in FMO equation I = H*F + (1 - H*M)B, where * is convolution
 	if M is None:
-		M = np.ones(oI.shape[:2])
+		M = np.ones(I.shape[:2])
 	if F is None:
-		F = np.ones((M.shape[0],M.shape[1],oI.shape[2]))
+		F = np.ones((M.shape[0],M.shape[1],I.shape[2]))
 	if oHmask is None:
-		Hmask = np.ones(oI.shape[:2]).astype(bool)
+		Hmask = np.ones(I.shape[:2]).astype(bool)
 		oHmask = Hmask
-		I = oI
-		B = oB
 	else: ## speed-up by padding and ROI
 		pads = np.ceil( (np.array(M.shape)-1)/2 ).astype(int)
 		rmin, rmax, cmin, cmax = boundingBox(oHmask, pads)
-		I = oI[rmin:rmax,cmin:cmax,:]
-		B = oB[rmin:rmax,cmin:cmax,:]
+		I = I[rmin:rmax,cmin:cmax,:]
+		B = B[rmin:rmax,cmin:cmax,:]
 		Hmask = oHmask[rmin:rmax,cmin:cmax]
 
 	H = np.zeros(I.shape[:2])
 	params = Params()
-	params.maxiter = 3
+	params.maxiter = 1
 	params.verbose = False
 	rel_tol2 = params.rel_tol**2
 	stateh = StateH()
@@ -70,8 +68,8 @@ def estimateFMH(oI,oB,M=None,F=None,oHmask=None):
 		reldiff2 = np.sum((H_old - H)**2) / np.sum(H**2)
 
 		if True:
-			imshow(H/np.max(H),wkey=2)
-			imshow(np.r_[np.repeat(M[:,:,np.newaxis], 3, axis=2),F], 2, 4)
+			# imshow(H/np.max(H),wkey=0.5)
+			# imshow(np.r_[np.repeat(M[:,:,np.newaxis], 3, axis=2),F], 0.05, 4)
 			print("FMH: iter={}, reldiff_h={}".format(iter, np.sqrt(reldiff2)))	
 
 		if reldiff2 < rel_tol2:

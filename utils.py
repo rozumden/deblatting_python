@@ -9,9 +9,9 @@ import pdb
 
 def imshow(im, wkey=0, inter=1):
 	if inter == 1:
-		cv2.imshow('image',im), cv2.waitKey(wkey*1000), cv2.destroyAllWindows() 
+		cv2.imshow('image',im), cv2.waitKey(int(np.round(wkey*1000))), cv2.destroyAllWindows() 
 	else:
-		cv2.imshow('image',cv2.resize(im, (0,0), fx=inter, fy=inter, interpolation = cv2.INTER_NEAREST)), cv2.waitKey(wkey*1000), cv2.destroyAllWindows()
+		cv2.imshow('image',cv2.resize(im, (0,0), fx=inter, fy=inter, interpolation = cv2.INTER_NEAREST)), cv2.waitKey(int(np.round(wkey*1000))), cv2.destroyAllWindows()
 
 def imshow6(im, wkey=0):
 	imshow(im, wkey=wkey, inter=6)
