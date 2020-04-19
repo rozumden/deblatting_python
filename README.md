@@ -9,6 +9,7 @@ This repository contains various algorithms to estimate unknown `F, M` and `H`. 
 
 Using
 -----
+The most general case is when everything needs to be estimated. In this case it is advisable to provide at least an approximate object size, e.g. by `M0 = np.ones([diameter]*2)`
 ```python
 H, F, M = estimateFMH(I, B, M0)
 ```
