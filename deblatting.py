@@ -10,7 +10,7 @@ from utils import *
 class Params:
 	def __init__(self): ## Parameters with which users can experiment are marked by #!
 		## universal parameters
-		self.loop_maxiter = 200 #! max number of (F,M)/H blind loop alternations  
+		self.loop_maxiter = 20 #! max number of (F,M)/H blind loop alternations  
 		self.maxiter = 10 #! max number of outer iterations
 		self.cg_maxiter = 25 # max number of inner CG iterations ('h' subproblem)
 		self.cg_tol = 1e-5 # tolerance for relative residual of inner CG iterations 
@@ -76,7 +76,7 @@ def estimateFMH(I,B,M=None,F=None,Hmask=None):
 			break
 
 	Hf = psffit(H)
-	params.maxiter = 50
+	params.maxiter = 40
 	F, M = estimateFM(I, B, Hf, M, F, params=params)
 
 	He = np.zeros(Hmask.shape[:2])

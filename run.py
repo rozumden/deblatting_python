@@ -19,13 +19,14 @@ def parse_args():
 def main():
     args = parse_args()
     
-    test_out(os.path.join('imgs','out1.png'), os.path.join('imgs','out_bgr.png'))
-    # test_real(os.path.join('imgs','floorball1.png'), os.path.join('imgs','floorball_bgr.png'))
+    test_real(os.path.join('imgs','floorball1.png'), os.path.join('imgs','floorball_bgr.png'))
+    pdb.set_trace()
+    
+    test_synthetic()
+    # test_out(os.path.join('imgs','out1.png'), os.path.join('imgs','out_bgr.png'))
     # test_real(os.path.join('imgs','floorball2.png'), os.path.join('imgs','floorball_bgr.png'))
     # test_real(os.path.join('imgs','vol1.png'), os.path.join('imgs','vol_bgr.png'))
     # test_real(os.path.join('imgs','vol2.png'), os.path.join('imgs','vol_bgr.png'))
-    test_synthetic()
-
 
 def test_out(I_path, B_path):
     I = cv2.imread(I_path)/255
@@ -48,7 +49,6 @@ def test_out(I_path, B_path):
     # for k = 1:3, matF(:,:,k,:) = matF(:,:,k,:) ./ fc(k); end
     # matF = ((matF.*reshape(WB,1,1,[])/(max(WB))).^gamma_coef);
 
-    pdb.set_trace()
 
 def test_real(I_path, B_path):    
     I = cv2.imread(I_path)/255
@@ -60,7 +60,6 @@ def test_real(I_path, B_path):
     M0 = np.ones([int(np.round(diameter))]*2)
     H,F,M = estimateFMH(I, B, M0)
     H /= np.max(H)
-    pdb.set_trace()
 
 
 def test_synthetic():
