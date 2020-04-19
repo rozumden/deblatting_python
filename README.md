@@ -1,5 +1,7 @@
 # Deblatting in Python
-Python implementation of deblatting (*debl*urring and m*atting*). Assuming an image formation model of input image `I = H * F + (1 - H * M) B`, this repository contains various algorithms to estimate unknown `F, M` and `H`. The background `B` is assumed to be given, for example by a median of 3 (or 5) previous video frames.
+Python implementation of deblatting (*debl*urring and m*atting*). We assume the following formation model of input image `I`:
+`I = H * F + (1 - H * M) B` 
+This repository contains various algorithms to estimate unknown `F, M` and `H`. The background `B` is assumed to be given, for example by a median of 3 (or 5) previous video frames.
 
 # Publications
 This repository contains the implementation of the followings papers:
