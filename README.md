@@ -9,7 +9,7 @@ This repository contains various algorithms to estimate unknown `F, M` and `H`. 
 
 Using
 -----
-All parameters are explained in `Params()` class.
+All parameters are explained in `Params()` class. Provided script `run.py` shows examples how to use the methods.
 ### Estimate F, M, H
 The most general case is when everything needs to be estimated. In this case it is advisable to provide at least an approximate object size, e.g. by `M0 = np.ones([diameter]*2)`. Otherwise an object of `I.shape` is being estimated, which can be slow. For speed up, inputs can be cropped to the area near the object of interest, or `Hmask` can be provided as a binary mask in the input image where the object is present.
 ```python
