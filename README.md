@@ -14,6 +14,18 @@ The most general case is when everything needs to be estimated. In this case it 
 ```python
 H, F, M = estimateFMH(I, B, M0)
 ```
+### Estimate F, M given H
+```python
+F, M = estimateFM(I, B, H)
+```
+
+### Estimate H given F, M
+```python
+H = estimateFMH(I, B, M, F)
+```
+
+### Estimate (F_i, M_i) given (H_i)
+Piece-wise deblatting. Coming soon.
 
 Publications
 ------------
