@@ -1,5 +1,5 @@
 # Deblatting in Python
-Python implementation of deblatting
+Python implementation of deblatting (*debl*urring and m*atting*).
 
 # Publications
 This repository contains the implementation of the followings papers:
