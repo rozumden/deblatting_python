@@ -22,8 +22,8 @@ def main():
     # test_real(os.path.join('imgs','floorball1.png'), os.path.join('imgs','floorball_bgr.png'))    
     # test_synthetic()
     # test_out(os.path.join('imgs','out1.png'), os.path.join('imgs','out_bgr.png'))
-    test_real(os.path.join('imgs','floorball2.png'), os.path.join('imgs','floorball_bgr.png'))
-    # test_real(os.path.join('imgs','vol1.png'), os.path.join('imgs','vol_bgr.png'))
+    # test_real(os.path.join('imgs','floorball2.png'), os.path.join('imgs','floorball_bgr.png'))
+    test_real(os.path.join('imgs','vol1.png'), os.path.join('imgs','vol_bgr.png'))
     # test_real(os.path.join('imgs','vol2.png'), os.path.join('imgs','vol_bgr.png'))
 
 def test_out(I_path, B_path):
@@ -45,7 +45,6 @@ def test_out(I_path, B_path):
     # WB = [2 1 2]; gamma_coef = 0.4;
     # for k = 1:3, matF(:,:,k,:) = matF(:,:,k,:) ./ fc(k); end
     # matF = ((matF.*reshape(WB,1,1,[])/(max(WB))).^gamma_coef);
-
 
 def test_real(I_path, B_path):    
     I = cv2.imread(I_path)/255
@@ -77,14 +76,15 @@ def test_synthetic():
     
     M0 = np.ones(M.shape)
     # He = estimateH(I, B, M, F, Hmask)
-    Fe,Me = estimateFM(I,B,H,M0)
-    # He,Fe,Me = estimateFMH(I, B, M0, Hmask=Hmask)
+    # Fe,Me = estimateFM(I,B,H,M0)
+    He,Fe,Me = estimateFMH(I, B, M0, Hmask=Hmask)
+
+    pdb.set_trace()
 
     imshow(He/np.max(He),1)
     imshow(Me,1,4)
     imshow(Fe,1,4)
 
-    pdb.set_trace()
 
 if __name__ == "__main__":
     main()

@@ -22,6 +22,7 @@ class Params:
 		self.alpha_h = 1.0 # Lp regularizer weight
 		self.beta_h = 1e3*self.alpha_h
 		self.sum1 = True # force sum(H)=1 constraint (via beta_h), takes precedence over lp
+		self.do_fit = True #! applying psffit
 		## parameters for F,M estimation
 		self.alpha_f = 2**(-12) #! F,M total variation regularizer weight, for strong influence use at least 2e-4
 		self.lambda_T = 1e-3 #! template L2 term weight, influence: 1e-3 soft, 1e-2 strong, 1e-1 very strong
@@ -75,12 +76,13 @@ def estimateFMH(I,B,M=None,F=None,Hmask=None):
 		if reldiff2 < rel_tol2:
 			break
 
-	Hf = psffit(H)
-	params.maxiter = 50
-	F, M = estimateFM(I, B, Hf, M, F, params=params)
+	if params.do_fit:
+		H = psffit(H)
+		params.maxiter = 50
+		F, M = estimateFM(I, B, H, M, F, params=params)
 
 	He = np.zeros(Hmask.shape[:2])
-	He[Hmask] = Hf[Hmask_small]
+	He[Hmask] = H[Hmask_small]
 	return He, F, M
 
 def psffit(H):
