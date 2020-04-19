@@ -4,7 +4,7 @@ Python implementation of deblatting (*debl*urring and m*atting*).
 # Publications
 This repository contains the implementation of the followings papers:
 
-```text
+```bibtex
 @inproceedings{Rozumnyi-et-al-CVPR-2020,
   author = {Denys Rozumnyi and Jan Kotera and Filip Sroubek and Jiri Matas},
   title = {Sub-frame Appearance and 6D Pose Estimation of Fast Moving Objects},
@@ -14,7 +14,7 @@ This repository contains the implementation of the followings papers:
   year = {2020}
 }
 ```
-```text
+```bibtex
 @inproceedings{Kotera-et-al-ICCVW-2019,
   author = {Jan Kotera and Denys Rozumnyi and Filip Sroubek and Jiri Matas},
   title = {Intra-frame Object Tracking by Deblatting},
@@ -26,7 +26,7 @@ This repository contains the implementation of the followings papers:
 }
 ```
 Other related papers:
-```text
+```bibtex
 @inproceedings{Rozumnyi-et-al-GCPR-2019,
   author = {Denys Rozumnyi and Jan Kotera and Filip Sroubek and Jiri Matas},
   title = {Non-Causal Tracking by Deblatting},
@@ -36,7 +36,7 @@ Other related papers:
   year = {2019}
 }
 ```
-```text
+```bibtex
 @inproceedings{Rozumnyi-et-al-CVPR-2017,
   author = {Denys Rozumnyi and Jan Kotera and Filip Sroubek and Lukas Novotny and Jiri Matas},
   title = {The World of Fast Moving Objects},
