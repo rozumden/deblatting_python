@@ -19,12 +19,12 @@ def parse_args():
 def main():
     args = parse_args()
     
-    # test_real(os.path.join('imgs','floorball1.png'), os.path.join('imgs','floorball_bgr.png'))    
-    # test_synthetic()
-    # test_out(os.path.join('imgs','out1.png'), os.path.join('imgs','out_bgr.png'))
-    # test_real(os.path.join('imgs','floorball2.png'), os.path.join('imgs','floorball_bgr.png'))
+    test_real(os.path.join('imgs','floorball1.png'), os.path.join('imgs','floorball_bgr.png'))    
+    test_synthetic()
+    test_real(os.path.join('imgs','floorball2.png'), os.path.join('imgs','floorball_bgr.png'))
     test_real(os.path.join('imgs','vol1.png'), os.path.join('imgs','vol_bgr.png'))
-    # test_real(os.path.join('imgs','vol2.png'), os.path.join('imgs','vol_bgr.png'))
+    test_real(os.path.join('imgs','vol2.png'), os.path.join('imgs','vol_bgr.png'))
+    test_out(os.path.join('imgs','out1.png'), os.path.join('imgs','out_bgr.png'))
 
 def test_out(I_path, B_path):
     I = cv2.imread(I_path)/255
