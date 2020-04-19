@@ -28,6 +28,8 @@ F, M = estimateFM(I, B, H)
 H = estimateH(I, B, M, F)
 ```
 
+<img src="imgs/estH.gif" width="500">
+
 ### Estimate (F_i, M_i) given (H_i)
 Piece-wise deblatting. Coming soon.
 
