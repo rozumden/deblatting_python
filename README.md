@@ -23,6 +23,8 @@ H, F, M = estimateFMH(I, B, M0)
 F, M = estimateFM(I, B, H)
 ```
 
+<img src="imgs/estFM.gif" width="500">
+
 ### Estimate H given F, M
 ```python
 H = estimateH(I, B, M, F)
