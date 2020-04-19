@@ -17,6 +17,7 @@ H, F, M = estimateFMH(I, B, M0)
 ```
 
 <img src="imgs/fmh.gif" width="500">
+<img src="imgs/syn.gif" width="500">
 
 ### Estimate F, M given H
 ```python
