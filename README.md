@@ -7,6 +7,10 @@ Python implementation of deblatting (*debl*urring and m*atting*). We assume the 
 
 This repository contains various algorithms to estimate unknown `F, M` and `H`. The background `B` is assumed to be given, for example by a median of 3-5 previous video frames.
 
+Dependencies
+------------
+The library is written in Python. The following packages are required: `numpy, scipy, skimage`. For visualization purposes, also `opencv` is recommended.
+
 Using
 -----
 All parameters are explained in `Params()` class. Provided script `run.py` shows examples how to use the methods.
