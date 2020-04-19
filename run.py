@@ -56,12 +56,12 @@ def test_real(I_path, B_path):
     M0 = np.ones([int(np.round(diameter))]*2)
     H,F,M = estimateFMH(I, B, M0)
 
-    pdb.set_trace()
-    Fe = F
-    Fe[Fe < 0] = 0
-    Fe[Fe > 1] = 1
-    He = estimateH(I, B, diskMask(M.shape[0]/2), Fe)
-    Fe,Me = estimateFM(I,B,He,M0)
+    # pdb.set_trace()
+    # Fe = F
+    # Fe[Fe < 0] = 0
+    # Fe[Fe > 1] = 1
+    # He = estimateH(I, B, diskMask(M.shape[0]/2), Fe)
+    # Fe,Me = estimateFM(I,B,He,M0)
 
 def test_synthetic():
     B = cv2.imread(os.path.join('imgs','beach.jpg'))/255
@@ -79,11 +79,11 @@ def test_synthetic():
     # Fe,Me = estimateFM(I,B,H,M0)
     He,Fe,Me = estimateFMH(I, B, M0, Hmask=Hmask)
 
-    pdb.set_trace()
+    # pdb.set_trace()
 
-    imshow(He/np.max(He),1)
-    imshow(Me,1,4)
-    imshow(Fe,1,4)
+    # imshow(He/np.max(He),1)
+    # imshow(Me,1,4)
+    # imshow(Fe,1,4)
 
 
 if __name__ == "__main__":
