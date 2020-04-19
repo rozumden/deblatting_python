@@ -13,8 +13,6 @@ This repository contains the implementation of the followings papers:
   month = jun,
   year = {2020}
 }
-```
-```bibtex
 @inproceedings{Kotera-et-al-ICCVW-2019,
   author = {Jan Kotera and Denys Rozumnyi and Filip Sroubek and Jiri Matas},
   title = {Intra-frame Object Tracking by Deblatting},
@@ -35,8 +33,6 @@ Other related papers:
   month = sep,
   year = {2019}
 }
-```
-```bibtex
 @inproceedings{Rozumnyi-et-al-CVPR-2017,
   author = {Denys Rozumnyi and Jan Kotera and Filip Sroubek and Lukas Novotny and Jiri Matas},
   title = {The World of Fast Moving Objects},
