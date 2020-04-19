@@ -19,9 +19,7 @@ def parse_args():
 def main():
     args = parse_args()
     
-    test_real(os.path.join('imgs','floorball1.png'), os.path.join('imgs','floorball_bgr.png'))
-    pdb.set_trace()
-    
+    # test_real(os.path.join('imgs','floorball1.png'), os.path.join('imgs','floorball_bgr.png'))    
     test_synthetic()
     # test_out(os.path.join('imgs','out1.png'), os.path.join('imgs','out_bgr.png'))
     # test_real(os.path.join('imgs','floorball2.png'), os.path.join('imgs','floorball_bgr.png'))
@@ -45,7 +43,6 @@ def test_out(I_path, B_path):
 
     # fc = [1.9 1 1.8];
     # WB = [2 1 2]; gamma_coef = 0.4;
-
     # for k = 1:3, matF(:,:,k,:) = matF(:,:,k,:) ./ fc(k); end
     # matF = ((matF.*reshape(WB,1,1,[])/(max(WB))).^gamma_coef);
 
@@ -59,8 +56,13 @@ def test_real(I_path, B_path):
     B = B[bbox[0]-ext:bbox[2]+ext,bbox[1]-ext:bbox[3]+ext,:]
     M0 = np.ones([int(np.round(diameter))]*2)
     H,F,M = estimateFMH(I, B, M0)
-    H /= np.max(H)
 
+    pdb.set_trace()
+    Fe = F
+    Fe[Fe < 0] = 0
+    Fe[Fe > 1] = 1
+    He = estimateH(I, B, diskMask(M.shape[0]/2), Fe)
+    Fe,Me = estimateFM(I,B,He,M0)
 
 def test_synthetic():
     B = cv2.imread(os.path.join('imgs','beach.jpg'))/255
@@ -75,12 +77,13 @@ def test_synthetic():
     
     M0 = np.ones(M.shape)
     # He = estimateH(I, B, M, F, Hmask)
-    # Fe,Me = estimateFM(I,B,H,M0)
-    He,Fe,Me = estimateFMH(I, B, M0, Hmask=Hmask)
+    Fe,Me = estimateFM(I,B,H,M0)
+    # He,Fe,Me = estimateFMH(I, B, M0, Hmask=Hmask)
 
     imshow(He/np.max(He),1)
     imshow(Me,1,4)
     imshow(Fe,1,4)
+
     pdb.set_trace()
 
 if __name__ == "__main__":
