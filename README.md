@@ -15,7 +15,9 @@ The most general case is when everything needs to be estimated. In this case it 
 ```python
 H, F, M = estimateFMH(I, B, M0)
 ```
+
 <img src="imgs/fmh.gif" width="500">
+
 ### Estimate F, M given H
 ```python
 F, M = estimateFM(I, B, H)
