@@ -43,7 +43,7 @@ Piece-wise deblatting. Coming soon.
 
 Publications
 ------------
-This repository contains the implementation of the followings papers:
+This repository contains implementation of the following publications:
 
 ```bibtex
 @inproceedings{Rozumnyi-et-al-CVPR-2020,
