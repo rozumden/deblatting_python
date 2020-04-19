@@ -10,11 +10,12 @@ from utils import *
 class Params:
 	def __init__(self): ## Parameters with which users can experiment are marked by #!
 		## universal parameters
-		self.loop_maxiter = 50 #! max number of (F,M)/H blind loop alternations  
+		self.loop_maxiter = 200 #! max number of (F,M)/H blind loop alternations  
 		self.maxiter = 10 #! max number of outer iterations
 		self.cg_maxiter = 25 # max number of inner CG iterations ('h' subproblem)
-		self.rel_tol = 2e-3 # relative between iterations difference for outer ADMM loop
 		self.cg_tol = 1e-5 # tolerance for relative residual of inner CG iterations 
+		self.rel_tol_h = 9e-3 # relative between iterations difference for outer ADMM loop
+		self.rel_tol_f = 1e-4 # relative between iterations difference for outer ADMM loop
 		self.lp = 1 # exponent of the Lp regularizer sum |h|^p or TV |Df|^p, allowed values are 0, 1
 		self.gamma = 1.0 # data term weight
 		## parameters for H estimation
@@ -22,14 +23,14 @@ class Params:
 		self.beta_h = 1e3*self.alpha_h
 		self.sum1 = True # force sum(H)=1 constraint (via beta_h), takes precedence over lp
 		## parameters for F,M estimation
-		self.alpha_f = 2e-12 #! F,M total variation regularizer weight, for strong influence use at least 2e-4
+		self.alpha_f = 2**(-12) #! F,M total variation regularizer weight, for strong influence use at least 2e-4
 		self.lambda_T = 1e-3 #! template L2 term weight, influence: 1e-3 soft, 1e-2 strong, 1e-1 very strong
 		self.lambda_R = 1e-2 #! mask rotation symmetry weight term, lambda_R*|R*m-m|^2 where R is approx rotational averaging, similar values as *_T
 		self.beta_fm = 1e-3 # splitting vf=f and vm=m due to (F,M) in C constraint where C is prescribed convex set given by positivity and F-M relation, penalty weight
 		self.beta_f = 10*self.alpha_f # splitting vx/vy=Df due to the TV regularizer
 		self.pyramid_eps = 1 # inverse slope of the f<=m/eps constraing for each channel. eps=0 means no constraint (only m in [0,1], f>0), eps=1 means f<=m etc
 		## parameters for sub-frame F,M estimation TODO
-		self.alpha_cross_f = 2^-12 #! cross-image (in 3-dim) image TV regularizer weight 
+		self.alpha_cross_f = 2**(-12) #! cross-image (in 3-dim) image TV regularizer weight 
 		self.beta_cross_f = 10*self.alpha_cross_f # splitting vc=D_cross*f due to cross-image TV regularizer
 		## visualization parameters 
 		self.verbose = True #!
@@ -58,7 +59,7 @@ def estimateFMH(I,B,M=None,F=None,Hmask=None):
 	H = np.zeros(I.shape[:2])
 	params = Params()
 	params.maxiter = 1
-	rel_tol2 = params.rel_tol**2
+	rel_tol2 = params.rel_tol_h**2
 	stateh = StateH()
 	statefm = StateFM()
 	## blind loop, iterate over estimateFM and estimateH
@@ -74,19 +75,19 @@ def estimateFMH(I,B,M=None,F=None,Hmask=None):
 		if reldiff2 < rel_tol2:
 			break
 
-	pdb.set_trace()
 	Hf = psffit(H)
+	params.maxiter = 50
+	F, M = estimateFM(I, B, Hf, M, F, params=params)
 
 	He = np.zeros(Hmask.shape[:2])
-	He[Hmask] = H[Hmask_small]
-
-
+	He[Hmask] = Hf[Hmask_small]
 	return He, F, M
 
 def psffit(H):
+	## very simple version of PSF fitting
+	## there are more sophisticated ways to do it with RANSAC
 	bH = (H/np.max(H) > 0.4)
 	x, y = np.nonzero(bH)
-	pdb.set_trace()
 	res1 = np.polyfit(x, y, 3, full=True)
 	res2 = np.polyfit(y, x, 3, full=True)
 	if res1[1][0] < res2[1][0]:
@@ -169,7 +170,7 @@ def estimateFM(I, B, H, M=None, F=None, F_T=None, M_T=None, state=None, params=N
 		rhs_m += (params.lambda_T*M_T) ## template matching term lambda_T*|M-M_T|  
 	
 	beta_tv4 = np.repeat(params.beta_f, Fshape[2]+1)
-	rel_tol2 = params.rel_tol**2
+	rel_tol2 = params.rel_tol_f**2
 	## ADMM loop
 	for iter in range(params.maxiter):
 		fdx = Dx @ f; fdy = Dy @ f
@@ -319,7 +320,7 @@ def estimateH(I, B, M, F, Hmask=None, state=None, params=None):
 	rhs_const = params.gamma*rhs_const[Hmask_small]
 
 	He = np.zeros(hsize)
-	rel_tol2 = params.rel_tol**2
+	rel_tol2 = params.rel_tol_h**2
 	## ADMM loop
 	for iter in range(params.maxiter):
 		H_old = H

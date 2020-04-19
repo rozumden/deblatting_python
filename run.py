@@ -26,6 +26,7 @@ def main():
     # test_real(os.path.join('imgs','vol2.png'), os.path.join('imgs','vol_bgr.png'))
     test_synthetic()
 
+
 def test_out(I_path, B_path):
     I = cv2.imread(I_path)/255
     B = cv2.imread(B_path)/255
@@ -41,12 +42,13 @@ def test_out(I_path, B_path):
     H,F,M = estimateFMH(I, B, M0)
     H /= np.max(H)
 
-    pdb.set_trace()
     # fc = [1.9 1 1.8];
     # WB = [2 1 2]; gamma_coef = 0.4;
 
     # for k = 1:3, matF(:,:,k,:) = matF(:,:,k,:) ./ fc(k); end
     # matF = ((matF.*reshape(WB,1,1,[])/(max(WB))).^gamma_coef);
+
+    pdb.set_trace()
 
 def test_real(I_path, B_path):    
     I = cv2.imread(I_path)/255
@@ -55,11 +57,11 @@ def test_real(I_path, B_path):
     ext = int(np.round(0.5*diameter))
     I = I[bbox[0]-ext:bbox[2]+ext,bbox[1]-ext:bbox[3]+ext,:]
     B = B[bbox[0]-ext:bbox[2]+ext,bbox[1]-ext:bbox[3]+ext,:]
-    M0 = np.ones([int(np.round(1.1*diameter))]*2)
+    M0 = np.ones([int(np.round(diameter))]*2)
     H,F,M = estimateFMH(I, B, M0)
     H /= np.max(H)
-
     pdb.set_trace()
+
 
 def test_synthetic():
     B = cv2.imread(os.path.join('imgs','beach.jpg'))/255
@@ -80,6 +82,7 @@ def test_synthetic():
     imshow(He/np.max(He),1)
     imshow(Me,1,4)
     imshow(Fe,1,4)
+    pdb.set_trace()
 
 if __name__ == "__main__":
     main()
