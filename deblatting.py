@@ -1,11 +1,10 @@
-import cv2
 import numpy as np
 from numpy.fft import fft2, ifft2
 import scipy.sparse.linalg
 from scipy import sparse
 
-import pdb
 from utils import *
+from vis import *
 
 class Params:
 	def __init__(self): ## Parameters with which users can experiment are marked by #!
@@ -37,7 +36,6 @@ class Params:
 		self.verbose = True #!
 		self.do_cost = False #!
 		self.visualize = True #!
-
 
 def estimateFMH(I,B,M=None,F=None,Hmask=None):
 	## Estimate F,M,H in FMO equation I = H*F + (1 - H*M)B, where * is convolution

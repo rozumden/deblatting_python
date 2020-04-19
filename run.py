@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 
 from utils import *
 from deblatting import *
-
+from vis import *
 
 def parse_args():
     parser = argparse.ArgumentParser()
