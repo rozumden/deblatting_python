@@ -3,7 +3,7 @@ Python implementation of deblatting (*debl*urring and m*atting*). We assume the 
 
 <img src="imgs/fmo_model.png" width="500">
 
-<img src="imgs/fmo_formation_ex.png" width="400">
+<img src="imgs/fmo_formation_ex.png" width="500">
 
 This repository contains various algorithms to estimate unknown `F, M` and `H`. The background `B` is assumed to be given, for example by a median of 3 (or 5) previous video frames.
 
