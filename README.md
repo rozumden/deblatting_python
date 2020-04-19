@@ -21,7 +21,7 @@ F, M = estimateFM(I, B, H)
 
 ### Estimate H given F, M
 ```python
-H = estimateFMH(I, B, M, F)
+H = estimateH(I, B, M, F)
 ```
 
 ### Estimate (F_i, M_i) given (H_i)
