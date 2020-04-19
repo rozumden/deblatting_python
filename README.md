@@ -18,7 +18,8 @@ This repository contains the implementation of the followings papers:
 @inproceedings{Kotera-et-al-ICCVW-2019,
   author = {Jan Kotera and Denys Rozumnyi and Filip Sroubek and Jiri Matas},
   title = {Intra-frame Object Tracking by Deblatting},
-  booktitle = {Internatioal Conference on Computer Vision Workshop (ICCVW), Visual Object Tracking Challenge Workshop, 2019},
+  booktitle = {Internatioal Conference on Computer Vision Workshop (ICCVW), 
+  Visual Object Tracking Challenge Workshop, 2019},
   address = {Seoul, South Korea},
   month = oct,
   year = {2019}
