@@ -5,6 +5,7 @@ from skimage import measure
 import skimage.transform
 from scipy import signal
 from skimage.measure import label, regionprops
+import pdb
 
 def fmo_detect(I,B):
 	## simulate FMO detector -> find approximate location of FMO
@@ -21,14 +22,29 @@ def fmo_detect(I,B):
 	return regions[ind].bbox, regions[ind].minor_axis_length
 
 def fmo_model(B,H,F,M):
-	M3 = np.repeat(M[:, :, np.newaxis], 3, axis=2)
-	HM = signal.fftconvolve(H, M, mode='same')
-	HM3 = np.repeat(HM[:, :, np.newaxis], 3, axis=2)
+	if len(H.shape) == 2:
+		H = H[:,:,np.newaxis]
+		F = F[:,:,:,np.newaxis]
+	elif len(F.shape) == 3:
+		F = np.repeat(F[:,:,:,np.newaxis],H.shape[2],3)
+	HM3 = np.zeros(B.shape)
 	HF = np.zeros(B.shape)
-	for kk in range(3):
-		HF[:,:,kk] = signal.fftconvolve(H, F[:,:,kk], mode='same')
+	for hi in range(H.shape[2]):
+		M1 = M
+		if len(M.shape) > 2:
+			M1 = M[:, :, hi]
+		M3 = np.repeat(M1[:, :, np.newaxis], 3, axis=2)
+		HM = signal.fftconvolve(H[:,:,hi], M1, mode='same')
+		HM3 += np.repeat(HM[:, :, np.newaxis], 3, axis=2)
+		F3 = F[:,:,:,hi]
+		for kk in range(3):
+			HF[:,:,kk] += signal.fftconvolve(H[:,:,hi], F3[:,:,kk], mode='same')
+	
 	I = B*(1-HM3) + HF
 	return I
+
+def montageF(F):
+	return np.reshape(np.transpose(F,(0,1,3,2)),(F.shape[0],-1,F.shape[2]),'F')
 
 def diskMask(rad):
 	sz = 2*np.array([rad, rad])
