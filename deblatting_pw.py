@@ -34,7 +34,7 @@ def main():
 	Hmask = fmo_model(np.zeros(B.shape),H,np.repeat(diskMask(10)[:,:,np.newaxis],3,2),M)[:,:,0] > 0.01
 	M0 = np.ones(M.shape[:2])
 
-	# imshow(montageF(F),0,3)
+	imshow(montageF(F),0,3)
 	# pdb.set_trace()
 
 	# He = estimateH(I, B, M, F, Hmask)
