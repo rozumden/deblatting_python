@@ -434,8 +434,11 @@ def createRnMatrix(img_sz, angles=None):
 def project2pyramid(m, f, eps):
 	## projection of (m,f) values to feasible "pyramid"-like intersection of convex sets (roughly all positive, m<=1, m>=f)
 	maxiter = 10 # number of whole cycles, 0=only positivity
-
-	mf = np.concatenate((m[:,np.newaxis],f),1)
+	onedimm = False
+	if len(m.shape) == 1:
+		onedimm = True
+		m = m[:,np.newaxis]
+	mf = np.concatenate((m,f),1)
 	N = mf.shape[1] # number of conv sets
 	Z = np.zeros((mf.shape[0],mf.shape[1],N)) # auxiliary vars (sth like projection residuals)
 	normal = np.array([-1,eps]) / np.sqrt(1 + eps**2) # dividing plane normal vector (for projection to oblique planes)
@@ -454,8 +457,10 @@ def project2pyramid(m, f, eps):
 			mf[W,0] -= (normal[0] * proj)
 			mf[W,idx] -= (normal[1] * proj)
 		Z[:,:,idx] = mf_old + Z[:,:,idx] - mf # auxiliaries
-
-	m = mf[:,0]
+	if onedimm:
+		m = mf[:,0]
+	else:
+		m = mf[:,:1]
 	f = mf[:,1:]
 	return m, f
 
@@ -486,7 +491,10 @@ def psfshift(H, usize):
 	## PSFSHIFT Moves PSF center to origin and extends the PSF to be the same size as image (for use with FT). ipsfshift does the reverse.
 	hsize = H.shape
 	usize = usize[:2]
-	if len(hsize) > 2:
+	if len(hsize) > 3:
+		Hp = np.zeros((usize[0],usize[1],hsize[2],hsize[3]))
+		Hp[:hsize[0],:hsize[1],:,:] = H ## pad zeros
+	elif len(hsize) > 2:
 		Hp = np.zeros((usize[0],usize[1],hsize[2]))
 		Hp[:hsize[0],:hsize[1],:] = H ## pad zeros
 	else:
@@ -529,9 +537,20 @@ def psfshift_idx(small, sz_large):
 		idy = idy[pos]
 		idz = idz[pos]
 		return idx, idy, idz
+	elif len(temp.shape) == 4:
+		idx,idy,idz,idf = np.nonzero(temp)
+		temp_idx = temp[idx,idy,idz,idf]
+		pos = np.zeros(temp_idx.shape).astype(int)
+		pos[temp_idx-1] = range(len(temp_idx))
+		idx = idx[pos]
+		idy = idy[pos]
+		idz = idz[pos]
+		idf = idf[pos]
+		return idx, idy, idz, idf
+
 
 def vec3(I):
-	return np.reshape(I, (I.shape[0]*I.shape[1], I.shape[2]))
+	return np.reshape(I, (I.shape[0]*I.shape[1], -1))
 
 def ivec3(I, ishape):
 	return np.reshape(I, ishape)
@@ -560,3 +579,8 @@ class StateFM:
 		self.Dy = None
 		self.DTD = None
 		self.Rn = None
+		## for piece-wise
+		self.vc = 0
+		self.ac = 0
+		self.vc_m = 0
+		self.ac_m = 0
