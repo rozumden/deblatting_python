@@ -33,17 +33,17 @@ def estimateFM_pw(I, B, H, M=None, F=None, F_T=None, M_T=None, state=None, param
 	elif len(M.shape) == 2:
 		M = M[:,:,np.newaxis,np.newaxis]
 	elif len(M.shape) == 3:
-		M = M[:,:,:,np.newaxis]
+		M = M[:,:,np.newaxis,:]
 	if F is None:
 		F = np.zeros((M.shape[0],M.shape[1],3,ns))
-	single_m = (M.shape[2] == 1)
+	single_m = (M.shape[3] == 1)
 	Fshape = F.shape
 	f = vec3(F)
 	m = vec3(M)
 	if F_T is not None:
 		F_T = vec3(F_T)
 	if M_T is not None:
-		M_T = M_T.flatten()
+		M_T = M_T.flatten('F')
 	Me = np.zeros(I.shape[:2]+(1,M.shape[3],))
 	Fe = np.zeros(I.shape+(ns,))
 
@@ -114,14 +114,14 @@ def estimateFM_pw(I, B, H, M=None, F=None, F_T=None, M_T=None, state=None, param
 	HT3 = np.repeat(HT, 3, axis=2)
 	## precompute const RHS for 'f/m' subproblem
 	rhs_f = np.real(ifft2(HT3*(fft2(I-B,axes=(0,1))[:,:,:,np.newaxis]),axes=(0,1)))
-	rhs_f = params.gamma*np.reshape(rhs_f[idx_f,idy_f,idz_f,idf_f], (Fshape[0]*Fshape[1],-1))
+	rhs_f = params.gamma*np.reshape(rhs_f[idx_f,idy_f,idz_f,idf_f], (Fshape[0]*Fshape[1],-1),'F')
 	if lambda_T > 0 and F_T is not None:
 		rhs_f += (lambda_T*F_T) ## template matching term lambda_T*|F-F_T|  
 	if single_m:
 		rhs_m = np.real(ifft2(np.sum(HT,3)*fft2(np.sum(B*(I-B),2),axes=(0,1))[:,:,np.newaxis],axes=(0,1)))[:,:,:,np.newaxis]
 	else:
 		rhs_m = np.real(ifft2(HT*fft2(np.sum(B*(I-B),2),axes=(0,1))[:,:,np.newaxis,np.newaxis],axes=(0,1)))
-	rhs_m = -params.gamma*np.reshape(rhs_m[idx_m,idy_m,idz_m,idf_m],(Fshape[0]*Fshape[1],-1))
+	rhs_m = -params.gamma*np.reshape(rhs_m[idx_m,idy_m,idz_m,idf_m],(Fshape[0]*Fshape[1],-1),'F')
 	if lambda_MT > 0 and M_T is not None:
 		rhs_m += (lambda_MT*M_T) ## template matching term lambda_MT*|M-M_T|  
 	
@@ -184,11 +184,11 @@ def estimateFM_pw(I, B, H, M=None, F=None, F_T=None, M_T=None, state=None, param
 		rhs1 = rhs_f + beta_f*(Dx.T @ (vx-ax) + Dy.T @ (vy-ay)) + beta_cross_f*crossDf_T(vc-ac) + params.beta_fm*(vf-af) # f-part of RHS
 		rhs2 = rhs_m + beta_m*(Dx.T @ (vx_m-ax_m) + Dy.T @ (vy_m-ay_m)) + beta_cross_m*crossDm_T(vc_m-ac_m) + params.beta_fm*(vm-am) # m-part of RHS
 		def estimateFM_cg_Ax(fmfun0):
-			fmfun = np.reshape(fmfun0, (-1,(f.shape[1]+m.shape[1])))
+			fmfun = np.reshape(fmfun0, (-1,(f.shape[1]+m.shape[1])),'F')
 			xf = fmfun[:,:f.shape[1]] 
 			xm = fmfun[:,f.shape[1]:]
-			Fe[idx_f,idy_f,idz_f,idf_f] = xf.flatten()
-			Me[idx_m,idy_m,idz_m,idf_m] = xm.flatten()
+			Fe[idx_f,idy_f,idz_f,idf_f] = xf.flatten('F')
+			Me[idx_m,idy_m,idz_m,idf_m] = xm.flatten('F')
 
 			HF = np.sum(fH*fft2(Fe,axes=(0,1)),3)
 			if single_m:
@@ -197,12 +197,12 @@ def estimateFM_pw(I, B, H, M=None, F=None, F_T=None, M_T=None, state=None, param
 				bHM = B*(np.real(ifft2(np.sum(fH*fft2(Me,axes=(0,1)),3),axes=(0,1))))
 
 			yf = np.real(ifft2(HT3*(HF - fft2(bHM,axes=(0,1)))[:,:,:,np.newaxis],axes=(0,1)))
-			yf = params.gamma*np.reshape(yf[idx_f,idy_f,idz_f,idf_f],(Fshape[0]*Fshape[1],-1))
+			yf = params.gamma*np.reshape(yf[idx_f,idy_f,idz_f,idf_f],(Fshape[0]*Fshape[1],-1),'F')
 			if single_m:
 				ym = np.real(ifft2(np.sum(HT,3)*fft2(np.sum(B*(bHM - np.real(ifft2(HF,axes=(0,1)))),2),axes=(0,1))[:,:,np.newaxis],axes=(0,1)))[:,:,:,np.newaxis]
 			else:
 				ym = np.real(ifft2(HT*fft2(np.sum(B*(bHM - np.real(ifft2(HF,axes=(0,1)))),2),axes=(0,1))[:,:,np.newaxis,np.newaxis],axes=(0,1)))
-			ym = params.gamma*np.reshape(ym[idx_m,idy_m,idz_m,idf_m],(Fshape[0]*Fshape[1],-1))
+			ym = params.gamma*np.reshape(ym[idx_m,idy_m,idz_m,idf_m],(Fshape[0]*Fshape[1],-1),'F')
 			if lambda_T > 0 and F_T is not None:
 				yf = yf + lambda_T*xf			
 			yf = yf + beta_cross_f*crossDf_DTD(xf)
@@ -212,10 +212,10 @@ def estimateFM_pw(I, B, H, M=None, F=None, F_T=None, M_T=None, state=None, param
 			if lambda_R > 0: 
 				ym = ym + lambda_R*(Rn @ xm) # mask regularizers
 			res = np.c_[yf,ym] + beta_tv4*(DTD @ fmfun) + params.beta_fm*fmfun # common regularizers/identity terms
-			return res.flatten()
+			return res.flatten('F')
 		A = scipy.sparse.linalg.LinearOperator([(f.shape[1]+m.shape[1])*f.shape[0]]*2, matvec=estimateFM_cg_Ax)
-		fm, info = scipy.sparse.linalg.cg(A, np.c_[rhs1,rhs2].flatten(), np.c_[f,m].flatten(), params.cg_tol, params.cg_maxiter)
-		fm = np.reshape(fm, (-1,(f.shape[1]+m.shape[1])))
+		fm, info = scipy.sparse.linalg.cg(A, np.c_[rhs1,rhs2].flatten('F'), np.c_[f,m].flatten('F'), params.cg_tol, params.cg_maxiter)
+		fm = np.reshape(fm, (-1,(f.shape[1]+m.shape[1])),'F')
 			
 		f = fm[:, :f.shape[1]]
 		m = fm[:, f.shape[1]:]
@@ -241,7 +241,7 @@ def estimateFM_pw(I, B, H, M=None, F=None, F_T=None, M_T=None, state=None, param
 			if params.do_cost: # not fully implemented for all terms, e.g. lambda_R
 				Fe[idx_f,idy_f,idz_f,idf_f] = ff
 				Me[idx_m,idy_m,idz_m,idf_m] = m
-				err = np.sum(np.reshape(np.real(ifft2(fH[:,:,np.newaxis]*fft2(Fe,axes=(0,1)),axes=(0,1)))-B*np.real(ifft2(fH*fft2(Me)))[:,:,np.newaxis]-(I-B), (-1,1))**2)
+				err = np.sum(np.reshape(np.real(ifft2(fH[:,:,np.newaxis]*fft2(Fe,axes=(0,1)),axes=(0,1)))-B*np.real(ifft2(fH*fft2(Me)))[:,:,np.newaxis]-(I-B), (-1,1),'F')**2)
 				cost = (params.gamma/2)*err + alpha_f*np.sum(np.sqrt(fdx**2+fdy**2))
 				cost = cost + alpha_m*np.sum(np.sqrt(mdx**2+mdy**2)) 
 				if F_T is not None:
@@ -269,7 +269,7 @@ def estimateFM_pw(I, B, H, M=None, F=None, F_T=None, M_T=None, state=None, param
 
 def crossD(xx, num_channels=3):
 	## cross-image forward derivative (img2-img1); expects input format of 'x' as in 'f' and 'm' in the main function
-	return xx[:,num_channels:] - xx[:,:-num_channels]
+	return (xx[:,num_channels:] - xx[:,:-num_channels])
 
 def crossD_T(xx, num_channels=3):
 	## transpose of cross-image derivative (img2-img1); expects input format of 'x' as in 'f' and 'm' in the main function but 1 image less (as is output of crossD)
@@ -279,7 +279,7 @@ def crossD_DTD(xx, num_channels=3):
 	## short for crossD_T(crossD(x)) (better memory managenemt when written explicitly)
 	return np.c_[xx[:,:num_channels]-xx[:,num_channels:2*num_channels], 2*xx[:,num_channels:-num_channels]-xx[:,:-2*num_channels]-xx[:,2*num_channels:], xx[:,-num_channels:]-xx[:,-2*num_channels:-num_channels]]
 
-def main():
+def test_synthetic_pw():
 	B = cv2.imread(os.path.join('imgs','beach.jpg'))/255
 	ns = 4
 	H = np.zeros((B.shape[0],B.shape[1],ns))
@@ -290,24 +290,31 @@ def main():
 	for ni in range(ns):
 		pars = np.array([[100+ni*stx, 100+ni*sty], [stx, sty]]).T
 		H[:,:,ni] = renderTraj(pars, np.zeros(B.shape[:-1]))
+		if ni > 0:
+			Hs = H[:,:,ni]
+			Hs[(Hs*H[:,:,ni-1]) > 0] = 0
+			H[:,:,ni] = Hs
 		rc = (ni/ns)*0.5 + ((ns-ni)/ns)*0.95
+		# rc = 0.8
 		F[:,:,:,ni] = np.concatenate((0*M1,rc*M1,0.4*M1),2)
-
 	H /= np.sum(H)
-
 	I = fmo_model(B,H,F,M)
 	Hmask = fmo_model(np.zeros(B.shape),H,np.repeat(diskMask(20)[:,:,np.newaxis],3,2),M)[:,:,0] > 0.01
 	M0 = np.ones(M.shape[:2])
-
 	# imshow(montageF(F),0,3)
-	# pdb.set_trace()
-
 	# He = estimateH(I, B, M, F, Hmask)
 	# Fe,Me = estimateFM(I,B,np.sum(H,2),M0)
 	# Fe,Me = estimateFM_pw(I,B,np.sum(H,2),M0)
 	Fe,Me = estimateFM_pw(I,B,H,M0)
 	# He,Fe,Me = estimateFMH(I, B, M0, Hmask=Hmask)
+	pdb.set_trace()
 
+def test_real_pw():
+	pdb.set_trace()
+
+def main():
+	test_synthetic_pw()
+	test_real_pw()
 
 
 if __name__ == "__main__":

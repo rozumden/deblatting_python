@@ -122,11 +122,11 @@ def estimateFM(I, B, H, M=None, F=None, F_T=None, M_T=None, state=None, params=N
 
 	Fshape = F.shape
 	f = vec3(F)
-	m = M.flatten()
+	m = M.flatten('F')
 	if F_T is not None:
 		F_T = vec3(F_T)
 	if M_T is not None:
-		M_T = M_T.flatten()
+		M_T = M_T.flatten('F')
 	Me = np.zeros(I.shape[:2])
 	Fe = np.zeros(I.shape)
 
@@ -161,7 +161,7 @@ def estimateFM(I, B, H, M=None, F=None, F_T=None, M_T=None, state=None, params=N
 	HT3 = np.repeat(HT[:, :, np.newaxis], 3, axis=2)
 	## precompute const RHS for 'f/m' subproblem
 	rhs_f = np.real(ifft2(HT3*fft2(I-B,axes=(0,1)),axes=(0,1)))
-	rhs_f = params.gamma*np.reshape(rhs_f[idx_f,idy_f,idz_f], (-1,Fshape[2]))
+	rhs_f = params.gamma*np.reshape(rhs_f[idx_f,idy_f,idz_f], (-1,Fshape[2]),'F')
 	if params.lambda_T > 0 and F_T is not None:
 		rhs_f += (params.lambda_T*F_T) ## template matching term lambda_T*|F-F_T|  
 	rhs_m = np.real(ifft2(HT*fft2(np.sum(B*(I-B),2),axes=(0,1)),axes=(0,1)))
@@ -209,17 +209,17 @@ def estimateFM(I, B, H, M=None, F=None, F_T=None, M_T=None, state=None, params=N
 
 		## F,M step
 		rhs1 = rhs_f + params.beta_f*(Dx.T @ (vx-ax) + Dy.T @ (vy-ay)) + params.beta_fm*(vf-af) # f-part of RHS
-		rhs2 = rhs_m + params.beta_f*(Dx.T @ (vx_m-ax_m) + Dy.T @ (vy_m-ay_m)).flatten() + params.beta_fm*(vm-am) # m-part of RHS
+		rhs2 = rhs_m + params.beta_f*(Dx.T @ (vx_m-ax_m) + Dy.T @ (vy_m-ay_m)).flatten('F') + params.beta_fm*(vm-am) # m-part of RHS
 		def estimateFM_cg_Ax(fmfun0):
-			fmfun = np.reshape(fmfun0, (-1,4))
+			fmfun = np.reshape(fmfun0, (-1,4),'F')
 			xf = fmfun[:,:Fshape[2]] 
 			xm = fmfun[:,-1]
-			Fe[idx_f,idy_f,idz_f] = xf.flatten()
+			Fe[idx_f,idy_f,idz_f] = xf.flatten('F')
 			Me[idx_m,idy_m] = xm
 			HF = fH[:,:,np.newaxis]*fft2(Fe,axes=(0,1))
 			bHM = B*(np.real(ifft2(fH*fft2(Me,axes=(0,1)),axes=(0,1)))[:,:,np.newaxis])
 			yf = np.real(ifft2(HT3*(HF - fft2(bHM,axes=(0,1))),axes=(0,1)))
-			yf = params.gamma*np.reshape(yf[idx_f,idy_f,idz_f],(-1,Fshape[2]))
+			yf = params.gamma*np.reshape(yf[idx_f,idy_f,idz_f],(-1,Fshape[2]),'F')
 			ym = np.real(ifft2(HT*fft2(np.sum(B*(bHM - np.real(ifft2(HF,axes=(0,1)))),2),axes=(0,1)),axes=(0,1)))
 			ym = params.gamma*ym[idx_m,idy_m]
 			if params.lambda_T > 0 and F_T is not None:
@@ -229,10 +229,10 @@ def estimateFM(I, B, H, M=None, F=None, F_T=None, M_T=None, state=None, params=N
 			if params.lambda_R > 0: 
 				ym = ym + params.lambda_R*(Rn @ xm) # mask regularizers
 			res = np.c_[yf,ym] + beta_tv4*(DTD @ fmfun) + params.beta_fm*fmfun # common regularizers/identity terms
-			return res.flatten()
+			return res.flatten('F')
 		A = scipy.sparse.linalg.LinearOperator((4*f.shape[0],4*f.shape[0]), matvec=estimateFM_cg_Ax)
-		fm, info = scipy.sparse.linalg.cg(A, np.c_[rhs1,rhs2].flatten(), np.c_[f,m].flatten(), params.cg_tol, params.cg_maxiter)
-		fm = np.reshape(fm, (-1,4))
+		fm, info = scipy.sparse.linalg.cg(A, np.c_[rhs1,rhs2].flatten('F'), np.c_[f,m].flatten('F'), params.cg_tol, params.cg_maxiter)
+		fm = np.reshape(fm, (-1,4),'F')
 		f = fm[:, :Fshape[2]]
 		m = fm[:, -1]
 
@@ -252,7 +252,7 @@ def estimateFM(I, B, H, M=None, F=None, F_T=None, M_T=None, state=None, params=N
 			if params.do_cost: # not fully implemented for all terms, e.g. lambda_R
 				Fe[idx_f,idy_f,idz_f] = ff
 				Me[idx_m,idy_m] = m
-				err = np.sum(np.reshape(np.real(ifft2(fH[:,:,np.newaxis]*fft2(Fe,axes=(0,1)),axes=(0,1)))-B*np.real(ifft2(fH*fft2(Me)))[:,:,np.newaxis]-(I-B), (-1,1))**2)
+				err = np.sum(np.reshape(np.real(ifft2(fH[:,:,np.newaxis]*fft2(Fe,axes=(0,1)),axes=(0,1)))-B*np.real(ifft2(fH*fft2(Me)))[:,:,np.newaxis]-(I-B), (-1,1),'F')**2)
 				cost = (params.gamma/2)*err + params.alpha_f*np.sum(np.sqrt(fdx**2+fdy**2))
 				cost = cost + params.alpha_f*np.sum(np.sqrt(mdx**2+mdy**2)) 
 				if F_T is not None:
@@ -386,22 +386,22 @@ def estimateH(I, B, M, F, Hmask=None, state=None, params=None):
 def createDerivatives0(sz):
 	N_in = sz[0] * sz[1]
 	N_out = (sz[0]+1) * (sz[1]+1)
-	idx_in = np.reshape( range(N_in), sz[:2])
-	idx_out = np.reshape( range(N_out), np.array(sz[:2])+1)
+	idx_in = np.reshape( range(N_in), sz[:2],'F')
+	idx_out = np.reshape( range(N_out), np.array(sz[:2])+1,'F')
 	## x direction
 	v1 = np.ones((sz[0], sz[1]-1))
 	v2 = np.ones((sz[0],1))
 	inds = idx_out[:-1,np.r_[:(idx_out.shape[1]-1), 1:idx_out.shape[1]]]
 	index = idx_in[:, np.r_[0,:(idx_in.shape[1]-1), 1:idx_in.shape[1], idx_in.shape[1]-1] ]
 	values = np.hstack((v2,-v1,v1,-v2))
-	Dx = sparse.csc_matrix((values.flatten(),(inds.flatten(),index.flatten())), shape=(N_out, N_in))
+	Dx = sparse.csc_matrix((values.flatten('F'),(inds.flatten('F'),index.flatten('F'))), shape=(N_out, N_in))
 	## y direction
 	v1 = np.ones((sz[0]-1, sz[1]))
 	v2 = np.ones((1,sz[1]))
 	inds = idx_out[np.r_[:(idx_out.shape[0]-1), 1:idx_out.shape[0]], :-1]
 	index = idx_in[np.r_[0,:(idx_in.shape[0]-1), 1:idx_in.shape[0], idx_in.shape[0]-1],:]
 	values = np.vstack((v2,-v1,v1,-v2))
-	Dy = sparse.csc_matrix((values.flatten(),(inds.flatten(),index.flatten())), shape=(N_out, N_in))
+	Dy = sparse.csc_matrix((values.flatten('F'),(inds.flatten('F'),index.flatten('F'))), shape=(N_out, N_in))
 	return Dx, Dy
 
 def createRnMatrix(img_sz, angles=None):
@@ -410,7 +410,7 @@ def createRnMatrix(img_sz, angles=None):
 	img_sz = np.array(img_sz[:2])
 	idx2, idx1 = np.meshgrid(range(img_sz[1]), range(img_sz[0]))
 	offset = (img_sz + 1)/2  # offset between indices and coordinates 
-	idx = np.c_[idx1.T.flatten()+1, idx2.T.flatten()+1] - offset
+	idx = np.c_[idx1.T.flatten('F')+1, idx2.T.flatten('F')+1] - offset
 	idx_out = np.zeros((0,)).astype(int)
 	idx_in = np.zeros((0,)).astype(int)
 	for ki in range(len(angles)): # no antialiasing, NN 'interpolation'
@@ -480,10 +480,10 @@ def lp_proximal_mapping(val_norm, amount, p):
 def proj2simplex(Y):
 	## euclidean projection of y (arbitrarily shaped but treated as a single vector) to a simplex defined as x>=0 and sum(x(:)) = 1
 	## based on "Projection onto the probability simplex: An efficient algorithm with a simple proof, and an application"; Weiran Wang et al; 2013 (arXiv:1309.1541)
-	Yf = Y.flatten()
+	Yf = Y.flatten('F')
 	X = -np.sort(-Yf) ## descend sort
 	temp = (np.cumsum(X)-1)/np.array(range(1,len(X)+1))
-	X = np.reshape(Yf - temp[np.nonzero(X > temp)[0][-1]], Y.shape)
+	X = np.reshape(Yf - temp[np.nonzero(X > temp)[0][-1]], Y.shape,'F')
 	X[X < 0] = 0
 	return X
 
@@ -515,7 +515,7 @@ def psfshift_idx(small, sz_large):
 	## variant of psfshift intended for repeated use in a loop (subsequent calls are faster)
 	## determines index pairing between 'small' and 'large' images, i.e. if large = psfshift(small, sz_large) then large[idx,idy] = small[mask_small]
 	if type(small) == tuple: ## it is shape
-		temp = np.reshape(np.array(range(1, np.prod(small)+1)), small).astype(int)
+		temp = np.reshape(np.array(range(1, np.prod(small)+1)), small,'F').astype(int)
 	else: ## it is array
 		temp = np.zeros(small.shape).astype(int)
 		temp[small] = np.array(range(1, np.count_nonzero(small)+1))
@@ -550,10 +550,10 @@ def psfshift_idx(small, sz_large):
 
 
 def vec3(I):
-	return np.reshape(I, (I.shape[0]*I.shape[1], -1))
+	return np.reshape(I, (I.shape[0]*I.shape[1], -1),'F')
 
 def ivec3(I, ishape):
-	return np.reshape(I, ishape)
+	return np.reshape(I, ishape,'F')
 
 class StateH:
 	def __init__(self):

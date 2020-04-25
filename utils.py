@@ -39,7 +39,6 @@ def fmo_model(B,H,F,M):
 		F3 = F[:,:,:,hi]
 		for kk in range(3):
 			HF[:,:,kk] += signal.fftconvolve(H[:,:,hi], F3[:,:,kk], mode='same')
-	
 	I = B*(1-HM3) + HF
 	return I
 
