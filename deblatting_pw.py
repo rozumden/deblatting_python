@@ -64,7 +64,8 @@ def estimateFM_pw(I, B, H, M=None, F=None, F_T=None, M_T=None, state=None, param
 	lambda_MT = params.lambda_T/M.shape[3]
 	if single_m:
 		beta_cross_m = 0
-
+	if ns == 1:
+		beta_cross_f = 0
 	## init
 	Dx = None
 	if state is not None:
@@ -279,43 +280,32 @@ def crossD_DTD(xx, num_channels=3):
 	## short for crossD_T(crossD(x)) (better memory managenemt when written explicitly)
 	return np.c_[xx[:,:num_channels]-xx[:,num_channels:2*num_channels], 2*xx[:,num_channels:-num_channels]-xx[:,:-2*num_channels]-xx[:,2*num_channels:], xx[:,-num_channels:]-xx[:,-2*num_channels:-num_channels]]
 
-def test_synthetic_pw():
-	B = cv2.imread(os.path.join('imgs','beach.jpg'))/255
-	ns = 4
-	H = np.zeros((B.shape[0],B.shape[1],ns))
-	M = diskMask(40)
-	M1 = np.expand_dims(M,-1)
-	F = np.zeros((M.shape[0],M.shape[1],3,ns))
-	stx = 60/ns; sty = 120/ns
+def psfsplit(H, ns):
+	## very simple version of PSF fitting with splitting
+	## there are more sophisticated ways to do it with RANSAC
+	bH = (H/np.max(H) > 0.4)
+	x, y = np.nonzero(bH)
+	res1 = np.polyfit(x, y, 3, full=True)
+	res2 = np.polyfit(y, x, 3, full=True)
+	if res1[1][0] < res2[1][0]:
+		coeffs = res1[0]
+		xs = [np.min(x), np.max(x)]
+		poly1d_fn = np.poly1d(coeffs) 
+		ys = poly1d_fn(xs)
+	else:
+		coeffs = res2[0]
+		ys = [np.min(y), np.max(y)]
+		poly1d_fn = np.poly1d(coeffs) 
+		xs = poly1d_fn(ys)
+	Hs = np.zeros((H.shape[0],H.shape[1],ns))
+	stx = (xs[1]-xs[0])/ns
+	sty = (ys[1]-ys[0])/ns
 	for ni in range(ns):
-		pars = np.array([[100+ni*stx, 100+ni*sty], [stx, sty]]).T
-		H[:,:,ni] = renderTraj(pars, np.zeros(B.shape[:-1]))
+		pars = np.array([[xs[0]+ni*stx, ys[0]+ni*sty], [stx, sty]]).T
+		Hs[:,:,ni] = renderTraj(pars, np.zeros(H.shape))
 		if ni > 0:
-			Hs = H[:,:,ni]
-			Hs[(Hs*H[:,:,ni-1]) > 0] = 0
-			H[:,:,ni] = Hs
-		rc = (ni/ns)*0.5 + ((ns-ni)/ns)*0.95
-		# rc = 0.8
-		F[:,:,:,ni] = np.concatenate((0*M1,rc*M1,0.4*M1),2)
-	H /= np.sum(H)
-	I = fmo_model(B,H,F,M)
-	Hmask = fmo_model(np.zeros(B.shape),H,np.repeat(diskMask(20)[:,:,np.newaxis],3,2),M)[:,:,0] > 0.01
-	M0 = np.ones(M.shape[:2])
-	# imshow(montageF(F),0,3)
-	# He = estimateH(I, B, M, F, Hmask)
-	# Fe,Me = estimateFM(I,B,np.sum(H,2),M0)
-	# Fe,Me = estimateFM_pw(I,B,np.sum(H,2),M0)
-	Fe,Me = estimateFM_pw(I,B,H,M0)
-	# He,Fe,Me = estimateFMH(I, B, M0, Hmask=Hmask)
-	pdb.set_trace()
-
-def test_real_pw():
-	pdb.set_trace()
-
-def main():
-	test_synthetic_pw()
-	test_real_pw()
-
-
-if __name__ == "__main__":
-    main()
+			Ht = Hs[:,:,ni]
+			Ht[(Ht*Hs[:,:,ni-1]) > 0] = 0
+			Hs[:,:,ni] = Ht
+	Hs /= np.sum(Hs)
+	return Hs

@@ -29,8 +29,8 @@ class Params:
 		self.beta_fm = 1e-3 # splitting vf=f and vm=m due to (F,M) in C constraint where C is prescribed convex set given by positivity and F-M relation, penalty weight
 		self.beta_f = 10*self.alpha_f # splitting vx/vy=Df due to the TV regularizer
 		self.pyramid_eps = 1 # inverse slope of the f<=m/eps constraing for each channel. eps=0 means no constraint (only m in [0,1], f>0), eps=1 means f<=m etc
-		## parameters for sub-frame F,M estimation TODO
-		self.alpha_cross_f = 2**(-12) #! cross-image (in 3-dim) image TV regularizer weight 
+		## parameters for sub-frame F,M estimation 
+		self.alpha_cross_f = 2**(-13) #! cross-image (in 3-dim) image TV regularizer weight 
 		self.beta_cross_f = 10*self.alpha_cross_f # splitting vc=D_cross*f due to cross-image TV regularizer
 		## visualization parameters 
 		self.verbose = True #!
