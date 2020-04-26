@@ -40,8 +40,8 @@ def test_real_pw(I_path, B_path):
     H,F,M = estimateFMH(I, B, M0)
     Hs = psfsplit(H,4)
     Fs,Ms = estimateFM_pw(I,B,Hs,M)
-    imshow(montageF(Fs),0,5)
-    pdb.set_trace()
+    # imshow(montageF(Fs),0,5)
+    # pdb.set_trace()
 
 def test_out(I_path, B_path):
     I = cv2.imread(I_path)/255
