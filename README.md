@@ -49,6 +49,7 @@ Fs, Ms = estimateFM_pw(I, B, Hs, M0)
 ```python
 Fs, Ms = estimateFM_pw(I, B, Hs, Ms0)
 ```
+<img src="imgs/pw_ms.gif" width="500">
 
 Publications
 ------------
