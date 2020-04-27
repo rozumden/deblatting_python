@@ -39,7 +39,11 @@ H = estimateH(I, B, M, F)
 <img src="imgs/estH.gif" width="500">
 
 ### Estimate (F_i, M_i) given (H_i)
-Piece-wise deblatting. Coming soon.
+Piece-wise deblatting. 
+```python
+Fs, Ms = estimateFM_pw(I, B, Hs, M0)
+Fs, Ms = estimateFM_pw(I, B, Hs, Ms0)
+```
 
 Publications
 ------------
