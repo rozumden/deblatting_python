@@ -38,8 +38,10 @@ def test_real_pw(I_path, B_path):
     B = B[bbox[0]-ext:bbox[2]+ext,bbox[1]-ext:bbox[3]+ext,:]
     M0 = np.ones([int(np.round(diameter))]*2)
     H,F,M = estimateFMH(I, B, M0)
-    Hs = psfsplit(H,4)
-    Fs,Ms = estimateFM_pw(I,B,Hs,M)
+    ns = 4
+    Hs = psfsplit(H,ns)
+    Fs,Ms = estimateFM_pw(I,B,Hs,np.ones(M.shape))
+    # Fs,Ms = estimateFM_pw(I,B,Hs,np.ones(M.shape+(ns,)))
     # imshow(montageF(Fs),0,5)
     # pdb.set_trace()
 
