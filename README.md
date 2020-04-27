@@ -42,6 +42,11 @@ H = estimateH(I, B, M, F)
 Piece-wise deblatting. 
 ```python
 Fs, Ms = estimateFM_pw(I, B, Hs, M0)
+```
+
+<img src="imgs/pw.gif" width="500">
+
+```python
 Fs, Ms = estimateFM_pw(I, B, Hs, Ms0)
 ```
 
