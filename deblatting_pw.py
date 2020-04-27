@@ -237,7 +237,7 @@ def estimateFM_pw(I, B, H, M=None, F=None, F_T=None, M_T=None, state=None, param
 				m_img = np.repeat(m_img,ns,axis=3)
 			fmon = montageF(f_img)
 			mmon = montageF(m_img)[:,:,0]
-			imshow_nodestroy(get_visim(None,fmon,mmon,I), 400/np.max(I.shape))
+			imshow_nodestroy(get_visim(montageH(H[:,:,0,:]),fmon,mmon,I), 400/np.max(I.shape))
 		if params.verbose:
 			if params.do_cost: # not fully implemented for all terms, e.g. lambda_R
 				Fe[idx_f,idy_f,idz_f,idf_f] = ff

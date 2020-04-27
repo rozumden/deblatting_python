@@ -10,7 +10,10 @@ def get_visim(H,F,M,I=None):
 	FM = cv2.resize(FM,(0,0), fx=sz/FM.shape[0], fy=sz/FM.shape[0])
 	visim = FM
 	if H is not None:
-		Hvis = np.repeat(H[:,:,np.newaxis], 3, axis=2)/np.max(H)
+		H0 = H
+		if len(H.shape) == 2 or H.shape[2] == 1:
+			H0 = np.repeat(H[:,:,np.newaxis], 3, axis=2)
+		Hvis = H0/np.max(H0)
 		visim = np.concatenate((Hvis, visim),1)
 	if I is not None:
 		visim = np.concatenate((I, visim),1)

@@ -45,6 +45,9 @@ def fmo_model(B,H,F,M):
 def montageF(F):
 	return np.reshape(np.transpose(F,(0,1,3,2)),(F.shape[0],-1,F.shape[2]),'F')
 
+def montageH(Hs):
+	return np.concatenate((np.sum(Hs[:,:,::3],2)[:,:,np.newaxis], np.sum(Hs[:,:,1::3],2)[:,:,np.newaxis], np.sum(Hs[:,:,2::3],2)[:,:,np.newaxis]),2)
+
 def diskMask(rad):
 	sz = 2*np.array([rad, rad])
 
