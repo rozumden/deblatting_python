@@ -39,7 +39,7 @@ H = estimateH(I, B, M, F)
 <img src="imgs/estH.gif" width="500">
 
 ### Estimate (F_i, M_i) given (H_i)
-Piece-wise deblatting. 
+Piece-wise deblatting. Single `M0 = np.ones([diameter]*2)` vs varying `Ms0 = np.ones([diameter]*2 +[ns])`, where `ns` is the number of splits.
 ```python
 Fs, Ms = estimateFM_pw(I, B, Hs, M0)
 ```
