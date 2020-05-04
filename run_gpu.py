@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 
 from utils import *
 from deblatting import *
-from deblatting_tf import *
+from gpu.deblatting_gpu import *
 from vis import *
 
 def main():
@@ -29,11 +29,11 @@ def test_synthetic():
     
     M0 = np.ones(M.shape)
 
-    # pdb.set_trace()
-
-    He = estimateH_tf(I, B, M, F, Hmask)
+    He = estimateH_gpu(I, B, M, F)
     # Fe,Me = estimateFM(I,B,H,M0)
     # He,Fe,Me = estimateFMH(I, B, M0, Hmask=Hmask)
+
+    # pdb.set_trace()
 
 
     # imshow(He/np.max(He),1)
