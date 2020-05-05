@@ -1,5 +1,6 @@
 ## taken from https://github.com/sbarratt/torch_cg
-
+## modified to support 4-dim images
+## use as X = CG(A_bmm, H)(rhs)
 import torch
 import time
 
@@ -21,7 +22,7 @@ def cg_batch(A_bmm, B, M_bmm=None, X0=None, rtol=1e-3, atol=0., maxiter=None, ve
         maxiter: (optional) Maximum number of iterations to perform. (default=5*n)
         verbose: (optional) Whether or not to print status messages. (default=False)
     """
-    K, n, m = B.shape
+    K, chnl, n, m = B.shape
 
     if M_bmm is None:
         M_bmm = lambda x: x
@@ -30,8 +31,8 @@ def cg_batch(A_bmm, B, M_bmm=None, X0=None, rtol=1e-3, atol=0., maxiter=None, ve
     if maxiter is None:
         maxiter = 5 * n
 
-    assert B.shape == (K, n, m)
-    assert X0.shape == (K, n, m)
+    assert B.shape == (K, chnl, n, m)
+    assert X0.shape == (K, chnl, n, m)
     assert rtol > 0 or atol > 0
     assert isinstance(maxiter, int)
 
@@ -48,7 +49,7 @@ def cg_batch(A_bmm, B, M_bmm=None, X0=None, rtol=1e-3, atol=0., maxiter=None, ve
     Z_k1 = Z_k
     Z_k2 = Z_k
 
-    B_norm = torch.norm(B, dim=1)
+    B_norm = (B**2).sum(3).sum(2)
     stopping_matrix = torch.max(rtol*B_norm, atol*torch.ones_like(B_norm))
 
     if verbose:
@@ -72,26 +73,26 @@ def cg_batch(A_bmm, B, M_bmm=None, X0=None, rtol=1e-3, atol=0., maxiter=None, ve
             R_k1 = R_k
             Z_k1 = Z_k
             X_k1 = X_k
-            denominator = (R_k2 * Z_k2).sum(1)
+            denominator = (R_k2 * Z_k2).sum(3).sum(2)
             denominator[denominator == 0] = 1e-8
-            beta = (R_k1 * Z_k1).sum(1) / denominator
-            P_k = Z_k1 + beta.unsqueeze(1) * P_k1
+            beta = (R_k1 * Z_k1).sum(3).sum(2) / denominator
+            P_k = Z_k1 + beta.unsqueeze(2).unsqueeze(3) * P_k1
 
-        denominator = (P_k * A_bmm(P_k)).sum(1)
+        denominator = (P_k * A_bmm(P_k)).sum(3).sum(2)
         denominator[denominator == 0] = 1e-8
-        alpha = (R_k1 * Z_k1).sum(1) / denominator
-        X_k = X_k1 + alpha.unsqueeze(1) * P_k
-        R_k = R_k1 - alpha.unsqueeze(1) * A_bmm(P_k)
+        alpha = (R_k1 * Z_k1).sum(3).sum(2) / denominator
+        X_k = X_k1 + alpha.unsqueeze(2).unsqueeze(3) * P_k
+        R_k = R_k1 - alpha.unsqueeze(2).unsqueeze(3) * A_bmm(P_k)
         end_iter = time.perf_counter()
 
-        residual_norm = torch.norm(A_bmm(X_k) - B, dim=1)
+        residual_norm_sq = ((A_bmm(X_k) - B)**2).sum(3).sum(2)
 
         if verbose:
             print("%03d | %8.4e %4.2f" %
-                  (k, torch.max(residual_norm-stopping_matrix),
+                  (k, torch.max(residual_norm_sq-stopping_matrix),
                     1. / (end_iter - start_iter)))
 
-        if (residual_norm <= stopping_matrix).all():
+        if (residual_norm_sq <= stopping_matrix).all():
             optimal = True
             break
 

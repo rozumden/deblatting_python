@@ -17,6 +17,9 @@ def main():
     test_synthetic()
 
 def test_synthetic():
+    params = Params()
+    params.visualize = False
+
     B = cv2.imread(os.path.join('imgs','beach.jpg'))/255
     pars = np.array([[100, 100], [50, 110]]).T
     H = renderTraj(pars, np.zeros(B.shape[:-1]))
@@ -29,14 +32,14 @@ def test_synthetic():
     
     M0 = np.ones(M.shape)
 
-    He = estimateH_gpu(I, B, M, F)
+    He = estimateH_gpu(I, B, M, F, params=params)
     # Fe,Me = estimateFM(I,B,H,M0)
     # He,Fe,Me = estimateFMH(I, B, M0, Hmask=Hmask)
 
-    # pdb.set_trace()
+    pdb.set_trace()
+    He = estimateH(I, B, M, F, params=params)
 
-
-    # imshow(He/np.max(He),1)
+    imshow(He/np.max(He))
     # imshow(Me,1,4)
     # imshow(Fe,1,4)
 

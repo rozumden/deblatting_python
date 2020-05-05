@@ -38,8 +38,8 @@ def estimateH_gpu(Ic, Bc, Mc, Fc, params=None):
 
 	## precompute RHS for the 'h' subproblem
 	term = complex_multiplication(iFconj,Fgb) - complex_multiplication(iMconj, Fbgb)
-	rhs_const = params.gamma*torch.irfft(term, signal_ndim=2, normalized=False, onesided=False).sum(1)
-
+	rhs_const = params.gamma*torch.irfft(term, signal_ndim=2, normalized=False, onesided=False).sum(1).unsqueeze(1)
+		
 	rel_tol2 = params.rel_tol_h**2
 	## ADMM loop
 	for iter in range(params.maxiter):
@@ -58,38 +58,22 @@ def estimateH_gpu(Ic, Bc, Mc, Fc, params=None):
 			BMh = B*torch.irfft(complex_multiplication(iM, FH),signal_ndim=2, normalized=False, onesided=False)
 			Fh_BMh = Fh - torch.rfft(BMh, signal_ndim=2, normalized=False, onesided=False)
 			term = complex_multiplication(iFconj,Fh_BMh) - iMconj*torch.rfft( B*torch.irfft(Fh_BMh,signal_ndim=2, normalized=False, onesided=False),signal_ndim=2, normalized=False, onesided=False)
-			res = torch.irfft(term,signal_ndim=2, normalized=False, onesided=False).sum(1)
-			res = params.gamma*res.unsqueeze(1) + params.beta_h*hfun
+			res = torch.irfft(term,signal_ndim=2, normalized=False, onesided=False).sum(1).unsqueeze(1)
+			res = params.gamma*res + params.beta_h*hfun
 			return res
 
-		pdb.set_trace()
-
-		# X = CG(A_bmm, H)(rhs)
 		H, info = cg_batch(A_bmm, rhs, X0=H, rtol=params.cg_tol, maxiter=params.cg_maxiter)
-		# H, info = scipy.sparse.linalg.cg(A, rhs, H, params.cg_tol, params.cg_maxiter)
+		pdb.set_trace()
+		rel_diff2 = torch.sum((H - H_old) ** 2)/torch.sum( H ** 2)
 
-		Diff = (H - H_old)
-		rel_diff2 = (Diff @ Diff)/(H @ H)
-
-		if params.visualize and False:
-			imshow_nodestroy(get_visim(H,F,M,I), 600/np.max(I.shape))
+		if params.visualize:
+			imshow_nodestroy(get_visim(H[0,0,:,:].data.cpu().detach().numpy(),Fc,Mc,Ic), 600/np.max(I.shape))
 		if params.verbose:
-			if params.do_cost:
-				FH = fft2(H,axes=(0,1))
-				FH3 = np.repeat(FH[:, :, np.newaxis], 3, axis=2)
-				Fh = iF*FH3
-				BMh = B*np.real(ifft2(iM3*FH3,axes=(0,1)));
-				err = np.sum((np.real(ifft2(Fh,axes=(0,1)))-BMh-(I-B))**2)
-				cost = params.gamma/2*err + params.alpha_h*np.sum(np.abs(H)**params.lp)
-				print("H: iter={}, reldiff={}, err={}, cost={}".format(iter, np.sqrt(rel_diff2), err, cost))	
-			else:
-				print("H: iter={}, reldiff={}".format(iter, np.sqrt(rel_diff2)))	
+			print("H: iter={}, reldiff={}".format(iter, torch.sqrt(rel_diff2)))	
 		if rel_diff2 < rel_tol2:
 			break
 
-	oHe = np.zeros(Hmask.shape)
-	oHe[Hmask] = H
-	return oHe
+	return H.data.cpu().detach().numpy()[0,0,:,:]
 
 def proj2simplex_gpu(Y, rgnA):
 	## euclidean projection of a batch of y to a simplex defined as x>=0 and sum(x(:)) = 1
