@@ -10,6 +10,144 @@ from gpu.torch_cg import *
 
 import torch
 
+def estimateFM_gpu(I, B, H, M=None, F=None, params=None):
+	## Estimate F,M in FMO equation I = H*F + (1 - H*M)B, where * is convolution
+	## M is suggested to be specified to know approximate object size, at least as an array of zeros, for speed-up
+	if params is None:
+		params = Params()
+	if M is None:
+		if F is not None:
+			M = np.zeros(F.shape[:2])
+		else:
+			M = np.zeros(I.shape[:2])
+	if F is None:
+		F = np.zeros((M.shape[0],M.shape[1],3))
+
+	Fshape = F.shape
+	f = vec3(F)
+	m = M.flatten('F')
+	if F_T is not None:
+		F_T = vec3(F_T)
+	if M_T is not None:
+		M_T = M_T.flatten('F')
+	Me = np.zeros(I.shape[:2])
+	Fe = np.zeros(I.shape)
+
+	idx_f, idy_f, idz_f = psfshift_idx(F.shape, I.shape)
+	idx_m, idy_m = psfshift_idx(M.shape, I.shape[:2])
+
+	## init
+	Dx, Dy = createDerivatives0(Fshape)
+	DTD = (Dx.T @ Dx) + (Dy.T @ Dy)
+	vx = np.zeros((Dx.shape[0],Fshape[2]))
+	vy = np.zeros((Dy.shape[0],Fshape[2]))
+	ay = 0; ax = 0 ## v=Df splitting due to TV and its assoc. Lagr. mult.
+	vx_m = np.zeros((Dx.shape[0],1))
+	vy_m = np.zeros((Dy.shape[0],1))
+	ay_m = 0; ax_m = 0 ## v_m=Dm splitting due to TV (m-part) and its assoc. Lagr. mult.
+	af = 0; vf = 0 ## vf=f splitting due to positivity and f=0 outside mask constraint
+	am = 0; vm = 0 ## vm=m splitting due to mask between [0,1]
+	if params.lambda_R > 0: 
+		RnA = createRnMatrix(Fshape[:2]).A
+		Rn = RnA.T @ RnA - RnA.T - RnA + np.eye(RnA.shape[0])
+		Rn = sparse.csc_matrix(Rn)
+
+	fH = fft2(H,axes=(0,1)) # precompute FT
+	HT = np.conj(fH) 
+	HT3 = np.repeat(HT[:, :, np.newaxis], 3, axis=2)
+	## precompute const RHS for 'f/m' subproblem
+	rhs_f = np.real(ifft2(HT3*fft2(I-B,axes=(0,1)),axes=(0,1)))
+	rhs_f = params.gamma*np.reshape(rhs_f[idx_f,idy_f,idz_f], (-1,Fshape[2]),'F')
+	if params.lambda_T > 0 and F_T is not None:
+		rhs_f += (params.lambda_T*F_T) ## template matching term lambda_T*|F-F_T|  
+	rhs_m = np.real(ifft2(HT*fft2(np.sum(B*(I-B),2),axes=(0,1)),axes=(0,1)))
+	rhs_m = -params.gamma*rhs_m[idx_m,idy_m] 
+	if params.lambda_T > 0 and M_T is not None:
+		rhs_m += (params.lambda_T*M_T) ## template matching term lambda_T*|M-M_T|  
+	
+	beta_tv4 = np.repeat(params.beta_f, Fshape[2]+1)
+	rel_tol2 = params.rel_tol_f**2
+	## ADMM loop
+	for iter in range(params.maxiter):
+		fdx = Dx @ f; fdy = Dy @ f
+		mdx = Dx @ m; mdy = Dy @ m
+		f_old = f; m_old = m
+		## dual/auxiliary var updates, vx/vy minimization (splitting due to TV regularizer)
+		if params.alpha_f > 0 and params.beta_f > 0:
+			val_x = fdx + ax
+			val_y = fdy + ay
+			shrink_factor = lp_proximal_mapping(np.sqrt(val_x**2 + val_y**2), params.alpha_f/params.beta_f, params.lp) # isotropic "TV"
+			vx = val_x*shrink_factor
+			vy = val_y*shrink_factor
+			ax = ax + fdx - vx ## 'a' step
+			ay = ay + fdy - vy 
+			## vx_m/vy_m minimization (splitting due to TV regularizer for the mask)
+			val_x = mdx + ax_m 
+			val_y = mdy + ay_m
+			shrink_factor = lp_proximal_mapping(np.sqrt(val_x**2 + val_y**2), params.alpha_f/params.beta_f, params.lp)
+			vx_m = val_x*shrink_factor
+			vy_m = val_y*shrink_factor
+			ax_m = ax_m + mdx - vx_m
+			ay_m = ay_m + mdy - vy_m
+		## vf/vm minimization (positivity and and f-m relation so that F is not large where M is small, mostly means F<=M)
+		if params.beta_fm > 0:
+			vf = f + af
+			vm = m + am
+			if params.pyramid_eps > 0: # (m,f) constrained to convex pyramid-like shape to force f<=const*m where const = 1/eps
+				vm, vf = project2pyramid(vm, vf, params.pyramid_eps)
+			else: # just positivity and m in [0,1]
+				vf[vf < 0] = 0
+				vm[vm < 0] = 0 
+				vm[vm > 1] = 1
+			# lagrange multiplier (dual var) update
+			af = af + f - vf
+			am = am + m - vm
+
+		## F,M step
+		rhs1 = rhs_f + params.beta_f*(Dx.T @ (vx-ax) + Dy.T @ (vy-ay)) + params.beta_fm*(vf-af) # f-part of RHS
+		rhs2 = rhs_m + params.beta_f*(Dx.T @ (vx_m-ax_m) + Dy.T @ (vy_m-ay_m)).flatten('F') + params.beta_fm*(vm-am) # m-part of RHS
+		def estimateFM_cg_Ax(fmfun0):
+			fmfun = np.reshape(fmfun0, (-1,4),'F')
+			xf = fmfun[:,:Fshape[2]] 
+			xm = fmfun[:,-1]
+			Fe[idx_f,idy_f,idz_f] = xf.flatten('F')
+			Me[idx_m,idy_m] = xm
+			HF = fH[:,:,np.newaxis]*fft2(Fe,axes=(0,1))
+			bHM = B*(np.real(ifft2(fH*fft2(Me,axes=(0,1)),axes=(0,1)))[:,:,np.newaxis])
+			yf = np.real(ifft2(HT3*(HF - fft2(bHM,axes=(0,1))),axes=(0,1)))
+			yf = params.gamma*np.reshape(yf[idx_f,idy_f,idz_f],(-1,Fshape[2]),'F')
+			ym = np.real(ifft2(HT*fft2(np.sum(B*(bHM - np.real(ifft2(HF,axes=(0,1)))),2),axes=(0,1)),axes=(0,1)))
+			ym = params.gamma*ym[idx_m,idy_m]
+			if params.lambda_R > 0: 
+				ym = ym + params.lambda_R*(Rn @ xm) # mask regularizers
+			res = np.c_[yf,ym] + beta_tv4*(DTD @ fmfun) + params.beta_fm*fmfun # common regularizers/identity terms
+			return res.flatten('F')
+		A = scipy.sparse.linalg.LinearOperator((4*f.shape[0],4*f.shape[0]), matvec=estimateFM_cg_Ax)
+		fm, info = scipy.sparse.linalg.cg(A, np.c_[rhs1,rhs2].flatten('F'), np.c_[f,m].flatten('F'), params.cg_tol, params.cg_maxiter)
+		fm = np.reshape(fm, (-1,4),'F')
+		f = fm[:, :Fshape[2]]
+		m = fm[:, -1]
+
+		ff = f.flatten()
+		df = ff-f_old.flatten()
+		dm = m-m_old
+		rel_diff2_f = (df @ df)/(ff @ ff)
+		rel_diff2_m = (dm @ dm)/(m @ m)
+		
+		if params.visualize:
+			f_img = ivec3(f, Fshape); m_img = ivec3(m, Fshape[:2])
+			imshow_nodestroy(get_visim(H,f_img,m_img,I), 600/np.max(I.shape))
+		if params.verbose:
+			print("FM: iter={}, reldiff=({}, {})".format(iter, np.sqrt(rel_diff2_f), np.sqrt(rel_diff2_m)))	
+
+		if rel_diff2_f < rel_tol2 and rel_diff2_m < rel_tol2:
+			break
+
+	f_img = ivec3(f, Fshape)
+	m_img = ivec3(m, Fshape[:2])
+	return f_img,m_img
+
+
 def estimateH_gpu(Ic, Bc, Mc, Fc, params=None):
 	## Estimate H in FMO equation I = H*F + (1 - H*M)B, where * is convolution
 	## Hmask represents a region in which computations are done
@@ -29,16 +167,15 @@ def estimateH_gpu(Ic, Bc, Mc, Fc, params=None):
 	rgnA = torch.arange(1,I.shape[2]*I.shape[3]+1).float().to(device)
 	hsize = I.shape[2:]
 	
-	iF = torch.rfft(psfshift_gpu(F, hsize, device), signal_ndim=2, normalized=False, onesided=False)
-	iFconj = complex_conj(iF)
-	iM = torch.rfft(psfshift_gpu(M, hsize, device), signal_ndim=2, normalized=False, onesided=False)
-	iMconj = complex_conj(iM)
-	Fgb = torch.rfft(I-B, signal_ndim=2, normalized=False, onesided=False)
-	Fbgb = torch.rfft(B*(I-B), signal_ndim=2, normalized=False, onesided=False)
+	iF = fft_gpu(psfshift_gpu(F, hsize, device))
+	iFconj = cconj(iF)
+	iM = fft_gpu(psfshift_gpu(M, hsize, device))
+	iMconj = cconj(iM)
+	Fgb = fft_gpu(I-B)
+	Fbgb = fft_gpu(B*(I-B))
 
 	## precompute RHS for the 'h' subproblem
-	term = complex_multiplication(iFconj,Fgb) - complex_multiplication(iMconj, Fbgb)
-	rhs_const = params.gamma*torch.irfft(term, signal_ndim=2, normalized=False, onesided=False).sum(1).unsqueeze(1)
+	rhs_const = params.gamma*ifft_gpu(cmul(iFconj,Fgb) - cmul(iMconj, Fbgb)).sum(1).unsqueeze(1)
 		
 	rel_tol2 = params.rel_tol_h**2
 	## ADMM loop
@@ -53,26 +190,28 @@ def estimateH_gpu(Ic, Bc, Mc, Fc, params=None):
 		rhs = rhs_const + params.beta_h*(v_lp-a_lp)
 
 		def A_bmm(hfun):
-			FH = torch.rfft(hfun, signal_ndim=2, normalized=False, onesided=False)
-			Fh = complex_multiplication(iF, FH)
-			BMh = B*torch.irfft(complex_multiplication(iM, FH),signal_ndim=2, normalized=False, onesided=False)
-			Fh_BMh = Fh - torch.rfft(BMh, signal_ndim=2, normalized=False, onesided=False)
-			term = complex_multiplication(iFconj,Fh_BMh) - complex_multiplication(iMconj, torch.rfft( B*torch.irfft(Fh_BMh,signal_ndim=2, normalized=False, onesided=False),signal_ndim=2, normalized=False, onesided=False))
-			res = torch.irfft(term,signal_ndim=2, normalized=False, onesided=False).sum(1).unsqueeze(1)
-			res = params.gamma*res + params.beta_h*hfun
-			return res
+			FH = fft_gpu(hfun)
+			Fh_BMh = cmul(iF, FH) - fft_gpu(B*ifft_gpu(cmul(iM, FH)))
+			term = cmul(iFconj,Fh_BMh) - cmul(iMconj, fft_gpu( B*ifft_gpu(Fh_BMh)))
+			return params.gamma*ifft_gpu(term).sum(1).unsqueeze(1) + params.beta_h*hfun
 
 		H, info = cg_batch(A_bmm, rhs, X0=H, rtol=params.cg_tol, maxiter=params.cg_maxiter)
-		rel_diff2 = torch.sum((H - H_old) ** 2)/torch.sum( H ** 2)
+		rel_diff2 = ((H - H_old) ** 2).sum([2,3])/( H ** 2).sum([2,3])
 
 		if params.visualize:
 			imshow_nodestroy(get_visim(H[0,0,:,:].data.cpu().detach().numpy(),Fc,Mc,Ic), 600/np.max(I.shape))
 		if params.verbose:
-			print("H: iter={}, reldiff={}".format(iter, torch.sqrt(rel_diff2)))	
-		if rel_diff2 < rel_tol2:
+			print("H: iter={}, reldiff={}".format(iter, torch.sqrt(torch.max(rel_diff2))))	
+		if (rel_diff2 < rel_tol2).all():
 			break
 
 	return H.data.cpu().detach().numpy()[0,0,:,:]
+
+def fft_gpu(inp):
+	return torch.rfft(inp, signal_ndim=2, normalized=False, onesided=False)
+
+def ifft_gpu(inp):
+	return torch.irfft(inp, signal_ndim=2, normalized=False, onesided=False)
 
 def proj2simplex_gpu(Y, rgnA):
 	## euclidean projection of a batch of y to a simplex defined as x>=0 and sum(x(:)) = 1
@@ -84,14 +223,14 @@ def proj2simplex_gpu(Y, rgnA):
 	X[X < 0] = 0
 	return X
 
-def complex_multiplication(arr1, arr2):
+def cmul(arr1, arr2):
 	re1 = arr1[:,:,:,:,0]
 	im1 = arr1[:,:,:,:,1]
 	re2 = arr2[:,:,:,:,0]
 	im2 = arr2[:,:,:,:,1]
 	return torch.stack([re1 * re2 - im1 * im2, re1 * im2 + im1 * re2], dim = -1)
 
-def complex_conj(arr):
+def cconj(arr):
 	return torch.stack([arr[:,:,:,:,0],-arr[:,:,:,:,1]], dim=-1)
 
 def psfshift_gpu(H, usize, device):
