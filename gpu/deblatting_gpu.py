@@ -57,13 +57,12 @@ def estimateH_gpu(Ic, Bc, Mc, Fc, params=None):
 			Fh = complex_multiplication(iF, FH)
 			BMh = B*torch.irfft(complex_multiplication(iM, FH),signal_ndim=2, normalized=False, onesided=False)
 			Fh_BMh = Fh - torch.rfft(BMh, signal_ndim=2, normalized=False, onesided=False)
-			term = complex_multiplication(iFconj,Fh_BMh) - iMconj*torch.rfft( B*torch.irfft(Fh_BMh,signal_ndim=2, normalized=False, onesided=False),signal_ndim=2, normalized=False, onesided=False)
+			term = complex_multiplication(iFconj,Fh_BMh) - complex_multiplication(iMconj, torch.rfft( B*torch.irfft(Fh_BMh,signal_ndim=2, normalized=False, onesided=False),signal_ndim=2, normalized=False, onesided=False))
 			res = torch.irfft(term,signal_ndim=2, normalized=False, onesided=False).sum(1).unsqueeze(1)
 			res = params.gamma*res + params.beta_h*hfun
 			return res
 
 		H, info = cg_batch(A_bmm, rhs, X0=H, rtol=params.cg_tol, maxiter=params.cg_maxiter)
-		pdb.set_trace()
 		rel_diff2 = torch.sum((H - H_old) ** 2)/torch.sum( H ** 2)
 
 		if params.visualize:

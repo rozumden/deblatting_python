@@ -2,7 +2,7 @@
 ## modified to support 4-dim images
 ## use as X = CG(A_bmm, H)(rhs)
 import torch
-import time
+# import time
 
 
 def cg_batch(A_bmm, B, M_bmm=None, X0=None, rtol=1e-3, atol=0., maxiter=None, verbose=False):
@@ -49,16 +49,17 @@ def cg_batch(A_bmm, B, M_bmm=None, X0=None, rtol=1e-3, atol=0., maxiter=None, ve
     Z_k1 = Z_k
     Z_k2 = Z_k
 
-    B_norm = (B**2).sum(3).sum(2)
-    stopping_matrix = torch.max(rtol*B_norm, atol*torch.ones_like(B_norm))
+    B_norm = (B**2).sum([2,3])
+    stopping_matrix = torch.max((rtol**2)*B_norm, (atol**2)*torch.ones_like(B_norm))
 
     if verbose:
         print("%03s | %010s %06s" % ("it", "dist", "it/s"))
+        start = time.perf_counter()
 
     optimal = False
-    start = time.perf_counter()
     for k in range(1, maxiter + 1):
-        start_iter = time.perf_counter()
+        if verbose:
+            start_iter = time.perf_counter()
         Z_k = M_bmm(R_k)
 
         if k == 1:
@@ -73,19 +74,20 @@ def cg_batch(A_bmm, B, M_bmm=None, X0=None, rtol=1e-3, atol=0., maxiter=None, ve
             R_k1 = R_k
             Z_k1 = Z_k
             X_k1 = X_k
-            denominator = (R_k2 * Z_k2).sum(3).sum(2)
+            denominator = (R_k2 * Z_k2).sum([2,3])
             denominator[denominator == 0] = 1e-8
-            beta = (R_k1 * Z_k1).sum(3).sum(2) / denominator
+            beta = (R_k1 * Z_k1).sum([2,3]) / denominator
             P_k = Z_k1 + beta.unsqueeze(2).unsqueeze(3) * P_k1
 
-        denominator = (P_k * A_bmm(P_k)).sum(3).sum(2)
+        denominator = (P_k * A_bmm(P_k)).sum([2,3])
         denominator[denominator == 0] = 1e-8
-        alpha = (R_k1 * Z_k1).sum(3).sum(2) / denominator
+        alpha = (R_k1 * Z_k1).sum([2,3]) / denominator
         X_k = X_k1 + alpha.unsqueeze(2).unsqueeze(3) * P_k
         R_k = R_k1 - alpha.unsqueeze(2).unsqueeze(3) * A_bmm(P_k)
-        end_iter = time.perf_counter()
+        if verbose:
+            end_iter = time.perf_counter()
 
-        residual_norm_sq = ((A_bmm(X_k) - B)**2).sum(3).sum(2)
+        residual_norm_sq = ((A_bmm(X_k) - B)**2).sum([2,3])
 
         if verbose:
             print("%03d | %8.4e %4.2f" %
@@ -95,8 +97,8 @@ def cg_batch(A_bmm, B, M_bmm=None, X0=None, rtol=1e-3, atol=0., maxiter=None, ve
         if (residual_norm_sq <= stopping_matrix).all():
             optimal = True
             break
-
-    end = time.perf_counter()
+    if verbose:
+        end = time.perf_counter()
 
     if verbose:
         if optimal:

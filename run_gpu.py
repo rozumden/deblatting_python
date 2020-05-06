@@ -18,7 +18,7 @@ def main():
 
 def test_synthetic():
     params = Params()
-    params.visualize = False
+    # params.visualize = False
 
     B = cv2.imread(os.path.join('imgs','beach.jpg'))/255
     pars = np.array([[100, 100], [50, 110]]).T
@@ -36,10 +36,10 @@ def test_synthetic():
     # Fe,Me = estimateFM(I,B,H,M0)
     # He,Fe,Me = estimateFMH(I, B, M0, Hmask=Hmask)
 
+    imshow(He/np.max(He))
     pdb.set_trace()
     He = estimateH(I, B, M, F, params=params)
 
-    imshow(He/np.max(He))
     # imshow(Me,1,4)
     # imshow(Fe,1,4)
 
