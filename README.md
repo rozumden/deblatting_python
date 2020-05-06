@@ -51,6 +51,13 @@ Fs, Ms = estimateFM_pw(I, B, Hs, Ms0)
 ```
 <img src="imgs/pw_ms.gif" width="500">
 
+### GPU versions under development 
+Only `H`-estimation is implemented so far. Requires PyTorch.
+
+```python
+H = estimateH_gpu(I, B, M, F)
+```
+
 Publications
 ------------
 This repository contains implementation of the following publications:
