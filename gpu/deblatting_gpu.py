@@ -10,18 +10,17 @@ from gpu.torch_cg import *
 
 import torch
 
-def estimateFM_gpu(I, B, H, M=None, F=None, params=None):
+def estimateFM_gpu(Ic, Bc, Hc, Mc=None, Fc=None, params=None):
 	## Estimate F,M in FMO equation I = H*F + (1 - H*M)B, where * is convolution
 	## M is suggested to be specified to know approximate object size, at least as an array of zeros, for speed-up
 	if params is None:
 		params = Params()
-	if M is None:
-		if F is not None:
-			M = np.zeros(F.shape[:2])
+	if Mc is None:
+			Mc = np.zeros(Fc.shape[:2])
 		else:
-			M = np.zeros(I.shape[:2])
-	if F is None:
-		F = np.zeros((M.shape[0],M.shape[1],3))
+			Mc = np.zeros(Ic.shape[:2])
+	if Fc is None:
+		Fc = np.zeros((Mc.shape[0],Mc.shape[1],3))
 
 	Fshape = F.shape
 	f = vec3(F)
