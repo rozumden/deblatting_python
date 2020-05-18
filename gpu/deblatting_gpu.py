@@ -16,6 +16,7 @@ def estimateFM_gpu(Ic, Bc, Hc, Mc=None, Fc=None, params=None):
 	if params is None:
 		params = Params()
 	if Mc is None:
+		if Fs is not None:
 			Mc = np.zeros(Fc.shape[:2])
 		else:
 			Mc = np.zeros(Ic.shape[:2])
@@ -51,15 +52,14 @@ def estimateFM_gpu(Ic, Bc, Hc, Mc=None, Fc=None, params=None):
 		Rn = RnA.T @ RnA - RnA.T - RnA + np.eye(RnA.shape[0])
 		Rn = sparse.csc_matrix(Rn)
 
-	fH = fft2(H,axes=(0,1)) # precompute FT
-	HT = np.conj(fH) 
-	HT3 = np.repeat(HT[:, :, np.newaxis], 3, axis=2)
+	fH = fft_gpu(H) # precompute FT
+	HT = cconj(fH) 
 	## precompute const RHS for 'f/m' subproblem
-	rhs_f = np.real(ifft2(HT3*fft2(I-B,axes=(0,1)),axes=(0,1)))
+	rhs_f = ifft_gpu(HT*fft_gpu(I-B))
 	rhs_f = params.gamma*np.reshape(rhs_f[idx_f,idy_f,idz_f], (-1,Fshape[2]),'F')
 	if params.lambda_T > 0 and F_T is not None:
 		rhs_f += (params.lambda_T*F_T) ## template matching term lambda_T*|F-F_T|  
-	rhs_m = np.real(ifft2(HT*fft2(np.sum(B*(I-B),2),axes=(0,1)),axes=(0,1)))
+	rhs_m = ifft_gpu(HT*fft_gpu((B*(I-B)).sum(1,True)))
 	rhs_m = -params.gamma*rhs_m[idx_m,idy_m] 
 	if params.lambda_T > 0 and M_T is not None:
 		rhs_m += (params.lambda_T*M_T) ## template matching term lambda_T*|M-M_T|  
@@ -149,15 +149,25 @@ def estimateFM_gpu(Ic, Bc, Hc, Mc=None, Fc=None, params=None):
 
 def estimateH_gpu(Ic, Bc, Mc, Fc, params=None):
 	## Estimate H in FMO equation I = H*F + (1 - H*M)B, where * is convolution
+	## dimensions: batch, channels, H, W
 	## Hmask represents a region in which computations are done
 	if params is None:
 		params = Params()
 	device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 	print(device)
-	I = torch.from_numpy(Ic[:,:,:,np.newaxis]).float().to(device).permute([3,2,0,1])
-	B = torch.from_numpy(Bc[:,:,:,np.newaxis]).float().to(device).permute([3,2,0,1])
-	M = torch.from_numpy(Mc[:,:,np.newaxis,np.newaxis]).float().to(device).permute([3,2,0,1])
-	F = torch.from_numpy(Fc[:,:,:,np.newaxis]).float().to(device).permute([3,2,0,1])
+	if len(Ic.shape) == 3:
+		I = torch.from_numpy(Ic[:,:,:,np.newaxis]).float().to(device).permute([3,2,0,1])
+		B = torch.from_numpy(Bc[:,:,:,np.newaxis]).float().to(device).permute([3,2,0,1])
+		M = torch.from_numpy(Mc[:,:,np.newaxis,np.newaxis]).float().to(device).permute([3,2,0,1])
+		F = torch.from_numpy(Fc[:,:,:,np.newaxis]).float().to(device).permute([3,2,0,1])
+	elif len(Ic.shape) == 4: # valid input
+		I = torch.from_numpy(Ic).float().to(device)
+		B = torch.from_numpy(Bc).float().to(device)
+		M = torch.from_numpy(Mc).float().to(device)
+		F = torch.from_numpy(Fc).float().to(device)
+	else:
+		print('Not valid input')
+		return
 	BS = I.shape[0]
 
 	H = torch.zeros((BS,1,I.shape[2],I.shape[3])).float().to(device)
@@ -174,8 +184,8 @@ def estimateH_gpu(Ic, Bc, Mc, Fc, params=None):
 	Fbgb = fft_gpu(B*(I-B))
 
 	## precompute RHS for the 'h' subproblem
-	rhs_const = params.gamma*ifft_gpu(cmul(iFconj,Fgb) - cmul(iMconj, Fbgb)).sum(1).unsqueeze(1)
-		
+	rhs_const = params.gamma*ifft_gpu(cmul(iFconj,Fgb) - cmul(iMconj, Fbgb)).sum(1,True)
+
 	rel_tol2 = params.rel_tol_h**2
 	## ADMM loop
 	for iter in range(params.maxiter):
@@ -192,19 +202,20 @@ def estimateH_gpu(Ic, Bc, Mc, Fc, params=None):
 			FH = fft_gpu(hfun)
 			Fh_BMh = cmul(iF, FH) - fft_gpu(B*ifft_gpu(cmul(iM, FH)))
 			term = cmul(iFconj,Fh_BMh) - cmul(iMconj, fft_gpu( B*ifft_gpu(Fh_BMh)))
-			return params.gamma*ifft_gpu(term).sum(1).unsqueeze(1) + params.beta_h*hfun
+			return params.gamma*ifft_gpu(term).sum(1,True) + params.beta_h*hfun
 
 		H, info = cg_batch(A_bmm, rhs, X0=H, rtol=params.cg_tol, maxiter=params.cg_maxiter)
 		rel_diff2 = ((H - H_old) ** 2).sum([2,3])/( H ** 2).sum([2,3])
 
 		if params.visualize:
-			imshow_nodestroy(get_visim(H[0,0,:,:].data.cpu().detach().numpy(),Fc,Mc,Ic), 600/np.max(I.shape))
+			bi = iter % BS
+			imshow_nodestroy(get_visim(H[bi,0,:,:].data.cpu().detach().numpy(),Fc[bi,:,:,:].transpose(1,2,0),Mc[bi,0,:,:],Ic[bi,:,:,:].transpose(1,2,0)), 600/np.max(I.shape))
 		if params.verbose:
 			print("H: iter={}, reldiff={}".format(iter, torch.sqrt(torch.max(rel_diff2))))	
 		if (rel_diff2 < rel_tol2).all():
 			break
 
-	return H.data.cpu().detach().numpy()[0,0,:,:]
+	return H.data.cpu().detach().numpy()[:,0,:,:].transpose(1,2,0)
 
 def fft_gpu(inp):
 	return torch.rfft(inp, signal_ndim=2, normalized=False, onesided=False)

@@ -14,25 +14,38 @@ from vis import *
 
 def main():
     # test_real(os.path.join('imgs','floorball1.png'), os.path.join('imgs','floorball_bgr.png'))    
-    test_synthetic()
+    test_synthetic_batch()
 
-def test_synthetic():
+def test_synthetic_batch():
     params = Params()
     # params.visualize = False
 
     B = cv2.imread(os.path.join('imgs','beach.jpg'))/255
-    pars = np.array([[100, 100], [50, 110]]).T
-    H = renderTraj(pars, np.zeros(B.shape[:-1]))
-    H /= np.sum(H)
-    M = diskMask(40)
-    M1 = np.expand_dims(M,-1)
-    F = np.concatenate((0*M1,0.8*M1,0.4*M1),2)
-    I = fmo_model(B,H,F,M)
-    Hmask = fmo_model(np.zeros(B.shape),H,np.repeat(diskMask(10)[:,:,np.newaxis],3,2),M)[:,:,0] > 0.01
+    ks = 3
+    Hs = np.zeros((ks,1,)+B.shape[:2])
+    Bs = np.zeros((ks,3,)+B.shape[:2])
+    Is = np.zeros((ks,3,)+B.shape[:2])
+    Ms = np.zeros((ks,1,80,80,))
+    Fs = np.zeros((ks,3,80,80,))
+    for k in range(ks):
+        pars = np.array([[100*(k+1), 100], [50*(k+1), 110]]).T
+        H = renderTraj(pars, np.zeros(B.shape[:-1]))
+        H /= np.sum(H)
+        M = diskMask(40)
+        M1 = np.expand_dims(M,-1)
+        F = np.concatenate((0*M1,0.8*M1,(0.4/(k+1))*M1),2)
+        I = fmo_model(B,H,F,M)
+        Hs[k,0,:,:] = H
+        Bs[k,:,:,:] = B.transpose(2,0,1)
+        Is[k,:,:,:] = I.transpose(2,0,1)
+        Fs[k,:,:,:] = F.transpose(2,0,1)
+        Ms[k,0,:,:] = M
+        # Hmask = fmo_model(np.zeros(B.shape),H,np.repeat(diskMask(10)[:,:,np.newaxis],3,2),M)[:,:,0] > 0.01
     
     M0 = np.ones(M.shape)
+    # pdb.set_trace()
 
-    He = estimateH_gpu(I, B, M, F, params=params)
+    He = estimateH_gpu(Is, Bs, Ms, Fs, params=params)
     # Fe,Me = estimateFM(I,B,H,M0)
     # He,Fe,Me = estimateFMH(I, B, M0, Hmask=Hmask)
 
