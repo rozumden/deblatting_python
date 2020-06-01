@@ -5,7 +5,7 @@ import torch
 # import time
 
 
-def cg_batch(A_bmm, B, M_bmm=None, X0=None, rtol=1e-3, atol=0., maxiter=None, verbose=False):
+def cg_batch(A_bmm, B, M_bmm=None, X0=None, rtol=1e-3, atol=0., maxiter=None,verbose=False):
     """Solves a batch of PD matrix linear systems using the preconditioned CG algorithm.
     This function solves a batch of matrix linear systems of the form
         A_i X_i = B_i,  i=1,...,K,
@@ -49,7 +49,7 @@ def cg_batch(A_bmm, B, M_bmm=None, X0=None, rtol=1e-3, atol=0., maxiter=None, ve
     Z_k1 = Z_k
     Z_k2 = Z_k
 
-    B_norm = (B**2).sum([2,3])
+    B_norm = (B**2).sum([1,2,3])
     stopping_matrix = torch.max((rtol**2)*B_norm, (atol**2)*torch.ones_like(B_norm))
 
     if verbose:
@@ -74,20 +74,20 @@ def cg_batch(A_bmm, B, M_bmm=None, X0=None, rtol=1e-3, atol=0., maxiter=None, ve
             R_k1 = R_k
             Z_k1 = Z_k
             X_k1 = X_k
-            denominator = (R_k2 * Z_k2).sum([2,3])
+            denominator = (R_k2 * Z_k2).sum([1,2,3])
             denominator[denominator == 0] = 1e-8
-            beta = (R_k1 * Z_k1).sum([2,3]) / denominator
-            P_k = Z_k1 + beta.unsqueeze(2).unsqueeze(3) * P_k1
+            beta = (R_k1 * Z_k1).sum([1,2,3]) / denominator
+            P_k = Z_k1 + beta.unsqueeze(1).unsqueeze(2).unsqueeze(3) * P_k1
 
-        denominator = (P_k * A_bmm(P_k)).sum([2,3])
+        denominator = (P_k * A_bmm(P_k)).sum([1,2,3])
         denominator[denominator == 0] = 1e-8
-        alpha = (R_k1 * Z_k1).sum([2,3]) / denominator
-        X_k = X_k1 + alpha.unsqueeze(2).unsqueeze(3) * P_k
-        R_k = R_k1 - alpha.unsqueeze(2).unsqueeze(3) * A_bmm(P_k)
+        alpha = (R_k1 * Z_k1).sum([1,2,3]) / denominator
+        X_k = X_k1 + alpha.unsqueeze(1).unsqueeze(2).unsqueeze(3) * P_k
+        R_k = R_k1 - alpha.unsqueeze(1).unsqueeze(2).unsqueeze(3) * A_bmm(P_k)
         if verbose:
             end_iter = time.perf_counter()
 
-        residual_norm_sq = ((A_bmm(X_k) - B)**2).sum([2,3])
+        residual_norm_sq = ((A_bmm(X_k) - B)**2).sum([1,2,3])
 
         if verbose:
             print("%03d | %8.4e %4.2f" %

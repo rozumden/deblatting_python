@@ -1,6 +1,4 @@
 import numpy as np
-from numpy.fft import fft2, ifft2
-import scipy.sparse.linalg
 from scipy import sparse
 
 from utils import *
@@ -15,38 +13,46 @@ def estimateFM_gpu(Ic, Bc, Hc, Mc=None, Fc=None, params=None):
 	## M is suggested to be specified to know approximate object size, at least as an array of zeros, for speed-up
 	if params is None:
 		params = Params()
+	params.lambda_R = 0 # not implemented
+	device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+	print(device)
+	I = torch.from_numpy(Ic).float().to(device)
+	B = torch.from_numpy(Bc).float().to(device)
+	H = torch.from_numpy(Hc).float().to(device)
+	BS = I.shape[0]
+
 	if Mc is None:
 		if Fs is not None:
-			Mc = np.zeros(Fc.shape[:2])
+			M = torch.zeros((BS,1,Fc.shape[0],Fc.shape[1])).float().to(device)
 		else:
-			Mc = np.zeros(Ic.shape[:2])
+			M = torch.zeros((BS,1,I.shape[2],I.shape[3])).float().to(device)
+	else:
+		M = torch.zeros((BS,1,Mc.shape[0],Mc.shape[1])).float().to(device)
 	if Fc is None:
-		Fc = np.zeros((Mc.shape[0],Mc.shape[1],3))
+		F = torch.zeros((BS,3,Mc.shape[0],Mc.shape[1])).float().to(device)
+	else:
+		F = torch.zeros((BS,3,Fc.shape[0],Fc.shape[1])).float().to(device)
 
-	Fshape = F.shape
-	f = vec3(F)
-	m = M.flatten('F')
-	if F_T is not None:
-		F_T = vec3(F_T)
-	if M_T is not None:
-		M_T = M_T.flatten('F')
-	Me = np.zeros(I.shape[:2])
-	Fe = np.zeros(I.shape)
+	Fshape = F.shape[2:]+(3,)
 
-	idx_f, idy_f, idz_f = psfshift_idx(F.shape, I.shape)
-	idx_m, idy_m = psfshift_idx(M.shape, I.shape[:2])
+	Mask = psfshift_gpu(1-M,I.shape[2:],device) ## to limit the size of mask support
+	Mask4 = torch.cat((Mask,Mask,Mask,Mask),1)
 
 	## init
-	Dx, Dy = createDerivatives0(Fshape)
-	DTD = (Dx.T @ Dx) + (Dy.T @ Dy)
-	vx = np.zeros((Dx.shape[0],Fshape[2]))
-	vy = np.zeros((Dy.shape[0],Fshape[2]))
-	ay = 0; ax = 0 ## v=Df splitting due to TV and its assoc. Lagr. mult.
-	vx_m = np.zeros((Dx.shape[0],1))
-	vy_m = np.zeros((Dy.shape[0],1))
-	ay_m = 0; ax_m = 0 ## v_m=Dm splitting due to TV (m-part) and its assoc. Lagr. mult.
-	af = 0; vf = 0 ## vf=f splitting due to positivity and f=0 outside mask constraint
-	am = 0; vm = 0 ## vm=m splitting due to mask between [0,1]
+	# Dx, Dy = createDerivatives0(Fshape)
+	# DTD = (Dx.T @ Dx) + (Dy.T @ Dy)
+	vx = torch.zeros_like(F).float().to(device) 
+	vy = torch.zeros_like(F).float().to(device) 
+	ay = torch.zeros_like(F).float().to(device)
+	ax = torch.zeros_like(F).float().to(device) ## v=Df splitting due to TV and its assoc. Lagr. mult.
+	vx_m = torch.zeros_like(M).float().to(device)
+	vy_m = torch.zeros_like(M).float().to(device)
+	ay_m = torch.zeros_like(M).float().to(device)
+	ax_m = torch.zeros_like(M).float().to(device) ## v_m=Dm splitting due to TV (m-part) and its assoc. Lagr. mult.
+	af = torch.zeros_like(F).float().to(device)
+	vf = torch.zeros_like(F).float().to(device) ## vf=f splitting due to positivity and f=0 outside mask constraint
+	am = torch.zeros_like(M).float().to(device)
+	vm = torch.zeros_like(M).float().to(device) ## vm=m splitting due to mask between [0,1]
 	if params.lambda_R > 0: 
 		RnA = createRnMatrix(Fshape[:2]).A
 		Rn = RnA.T @ RnA - RnA.T - RnA + np.eye(RnA.shape[0])
@@ -55,27 +61,22 @@ def estimateFM_gpu(Ic, Bc, Hc, Mc=None, Fc=None, params=None):
 	fH = fft_gpu(H) # precompute FT
 	HT = cconj(fH) 
 	## precompute const RHS for 'f/m' subproblem
-	rhs_f = ifft_gpu(HT*fft_gpu(I-B))
-	rhs_f = params.gamma*np.reshape(rhs_f[idx_f,idy_f,idz_f], (-1,Fshape[2]),'F')
-	if params.lambda_T > 0 and F_T is not None:
-		rhs_f += (params.lambda_T*F_T) ## template matching term lambda_T*|F-F_T|  
-	rhs_m = ifft_gpu(HT*fft_gpu((B*(I-B)).sum(1,True)))
-	rhs_m = -params.gamma*rhs_m[idx_m,idy_m] 
-	if params.lambda_T > 0 and M_T is not None:
-		rhs_m += (params.lambda_T*M_T) ## template matching term lambda_T*|M-M_T|  
-	
-	beta_tv4 = np.repeat(params.beta_f, Fshape[2]+1)
+	rhs_f = params.gamma*ifft_gpu(cmul(HT,fft_gpu(I-B)))
+	rhs_m = -params.gamma*ifft_gpu(cmul(HT,fft_gpu((B*(I-B)).sum(1,True))))
+		
+	beta_tv4 = torch.from_numpy(np.repeat(params.beta_f, Fshape[2]+1)).float().to(device).unsqueeze(0).unsqueeze(-1).unsqueeze(-1)
 	rel_tol2 = params.rel_tol_f**2
 	## ADMM loop
 	for iter in range(params.maxiter):
-		fdx = Dx @ f; fdy = Dy @ f
-		mdx = Dx @ m; mdy = Dy @ m
-		f_old = f; m_old = m
+		fdx, fdy = gradient_gpu(F)
+		mdx, mdy = gradient_gpu(M)
+
+		F_old = F; M_old = M
 		## dual/auxiliary var updates, vx/vy minimization (splitting due to TV regularizer)
 		if params.alpha_f > 0 and params.beta_f > 0:
 			val_x = fdx + ax
 			val_y = fdy + ay
-			shrink_factor = lp_proximal_mapping(np.sqrt(val_x**2 + val_y**2), params.alpha_f/params.beta_f, params.lp) # isotropic "TV"
+			shrink_factor = lp_proximal_mapping_gpu(torch.sqrt(val_x**2 + val_y**2), params.alpha_f/params.beta_f, params.lp, device) # isotropic "TV"
 			vx = val_x*shrink_factor
 			vy = val_y*shrink_factor
 			ax = ax + fdx - vx ## 'a' step
@@ -83,68 +84,65 @@ def estimateFM_gpu(Ic, Bc, Hc, Mc=None, Fc=None, params=None):
 			## vx_m/vy_m minimization (splitting due to TV regularizer for the mask)
 			val_x = mdx + ax_m 
 			val_y = mdy + ay_m
-			shrink_factor = lp_proximal_mapping(np.sqrt(val_x**2 + val_y**2), params.alpha_f/params.beta_f, params.lp)
+			shrink_factor = lp_proximal_mapping_gpu(torch.sqrt(val_x**2 + val_y**2), params.alpha_f/params.beta_f, params.lp, device)
 			vx_m = val_x*shrink_factor
 			vy_m = val_y*shrink_factor
 			ax_m = ax_m + mdx - vx_m
 			ay_m = ay_m + mdy - vy_m
 		## vf/vm minimization (positivity and and f-m relation so that F is not large where M is small, mostly means F<=M)
 		if params.beta_fm > 0:
-			vf = f + af
-			vm = m + am
+			vf = F + af
+			vm = M + am
 			if params.pyramid_eps > 0: # (m,f) constrained to convex pyramid-like shape to force f<=const*m where const = 1/eps
-				vm, vf = project2pyramid(vm, vf, params.pyramid_eps)
+				vm, vf = project2pyramid_gpu(vm, vf, params.pyramid_eps, device)
 			else: # just positivity and m in [0,1]
 				vf[vf < 0] = 0
 				vm[vm < 0] = 0 
 				vm[vm > 1] = 1
 			# lagrange multiplier (dual var) update
-			af = af + f - vf
-			am = am + m - vm
+			af = af + F - vf
+			am = am + M - vm
 
 		## F,M step
-		rhs1 = rhs_f + params.beta_f*(Dx.T @ (vx-ax) + Dy.T @ (vy-ay)) + params.beta_fm*(vf-af) # f-part of RHS
-		rhs2 = rhs_m + params.beta_f*(Dx.T @ (vx_m-ax_m) + Dy.T @ (vy_m-ay_m)).flatten('F') + params.beta_fm*(vm-am) # m-part of RHS
-		def estimateFM_cg_Ax(fmfun0):
-			fmfun = np.reshape(fmfun0, (-1,4),'F')
-			xf = fmfun[:,:Fshape[2]] 
-			xm = fmfun[:,-1]
-			Fe[idx_f,idy_f,idz_f] = xf.flatten('F')
-			Me[idx_m,idy_m] = xm
-			HF = fH[:,:,np.newaxis]*fft2(Fe,axes=(0,1))
-			bHM = B*(np.real(ifft2(fH*fft2(Me,axes=(0,1)),axes=(0,1)))[:,:,np.newaxis])
-			yf = np.real(ifft2(HT3*(HF - fft2(bHM,axes=(0,1))),axes=(0,1)))
-			yf = params.gamma*np.reshape(yf[idx_f,idy_f,idz_f],(-1,Fshape[2]),'F')
-			ym = np.real(ifft2(HT*fft2(np.sum(B*(bHM - np.real(ifft2(HF,axes=(0,1)))),2),axes=(0,1)),axes=(0,1)))
-			ym = params.gamma*ym[idx_m,idy_m]
+		rhs1 = rhs_f + psfshift_gpu(params.beta_f*(gradientT_gpu(vx-ax,0) + gradientT_gpu(vy-ay,1)) + params.beta_fm*(vf-af),I.shape[2:],device) # f-part of RHS
+		rhs2 = rhs_m + psfshift_gpu(params.beta_f*(gradientT_gpu(vx_m-ax_m,0) + gradientT_gpu(vy_m-ay_m,1)) + params.beta_fm*(vm-am),I.shape[2:],device) # m-part of RHS
+		rhs = torch.cat((rhs1,rhs2),1)*Mask4
+		def F_bmm(fmfun0):
+			Fe = fmfun0[:,:Fshape[2],:,:]
+			Me = fmfun0[:,-1:,:,:]
+			HF = cmul(fH, fft_gpu(Fe))
+			bHM = B*ifft_gpu(cmul(fH,fft_gpu(Me)))
+			yf = params.gamma*ifft_gpu(cmul(HT, (HF - fft_gpu(bHM))))
+			ym = params.gamma*ifft_gpu(cmul(HT,fft_gpu((B*(bHM - ifft_gpu(HF))).sum(1,True))))
 			if params.lambda_R > 0: 
 				ym = ym + params.lambda_R*(Rn @ xm) # mask regularizers
-			res = np.c_[yf,ym] + beta_tv4*(DTD @ fmfun) + params.beta_fm*fmfun # common regularizers/identity terms
-			return res.flatten('F')
-		A = scipy.sparse.linalg.LinearOperator((4*f.shape[0],4*f.shape[0]), matvec=estimateFM_cg_Ax)
-		fm, info = scipy.sparse.linalg.cg(A, np.c_[rhs1,rhs2].flatten('F'), np.c_[f,m].flatten('F'), params.cg_tol, params.cg_maxiter)
-		fm = np.reshape(fm, (-1,4),'F')
-		f = fm[:, :Fshape[2]]
-		m = fm[:, -1]
+			fmx, fmy = gradient_gpu(ipsfshift_gpu(fmfun0, F.shape))
+			DTD = psfshift_gpu(gradientT_gpu(fmx,0) + gradientT_gpu(fmy,1),I.shape[2:],device)
+			res = torch.cat((yf,ym),1) + beta_tv4*DTD + params.beta_fm*fmfun0 # common regularizers/identity terms
+			res = res * Mask4 
+			return res	
+		FM = psfshift_gpu(torch.cat((F,M),1), I.shape[2:], device)
+		FM, info = cg_batch(F_bmm, rhs, X0=FM, rtol=params.cg_tol, maxiter=params.cg_maxiter)
+		fm = ipsfshift_gpu(FM, F.shape)
+		F = fm[:,:Fshape[2],:,:]
+		M = fm[:,-1:,:,:]
 
-		ff = f.flatten()
-		df = ff-f_old.flatten()
-		dm = m-m_old
-		rel_diff2_f = (df @ df)/(ff @ ff)
-		rel_diff2_m = (dm @ dm)/(m @ m)
-		
+		rel_diff2_f = ((F - F_old) ** 2).sum([1,2,3])/( F ** 2).sum([1,2,3])
+		rel_diff2_m = ((M - M_old) ** 2).sum([1,2,3])/( M ** 2).sum([1,2,3])
+
 		if params.visualize:
-			f_img = ivec3(f, Fshape); m_img = ivec3(m, Fshape[:2])
-			imshow_nodestroy(get_visim(H,f_img,m_img,I), 600/np.max(I.shape))
+			bi = iter % BS
+			Fcpu = F[bi,:,:,:].data.cpu().detach().numpy().transpose(1,2,0)
+			Mcpu = M[bi,0,:,:].data.cpu().detach().numpy()
+			imshow_nodestroy(get_visim(Hc[bi,0,:,:],Fcpu,Mcpu,Ic[bi,:,:,:].transpose(1,2,0)), 600/np.max(I.shape))
+			# imshow(F[0,:,:,:].data.cpu().detach().numpy().transpose(1,2,0))
 		if params.verbose:
-			print("FM: iter={}, reldiff=({}, {})".format(iter, np.sqrt(rel_diff2_f), np.sqrt(rel_diff2_m)))	
+			print("FM: iter={}, reldiff=({}, {})".format(iter, torch.sqrt(torch.max(rel_diff2_f)), torch.sqrt(torch.max(rel_diff2_m))))	
 
 		if rel_diff2_f < rel_tol2 and rel_diff2_m < rel_tol2:
 			break
 
-	f_img = ivec3(f, Fshape)
-	m_img = ivec3(m, Fshape[:2])
-	return f_img,m_img
+	return F, M
 
 
 def estimateH_gpu(Ic, Bc, Mc, Fc, params=None):
@@ -217,11 +215,60 @@ def estimateH_gpu(Ic, Bc, Mc, Fc, params=None):
 
 	return H.data.cpu().detach().numpy()[:,0,:,:].transpose(1,2,0)
 
+def gradient_gpu(inp):
+	Dx = inp - torch.cat((inp[:,:,1:,:], 0*inp[:,:,-1:,:]), 2)
+	Dy = inp - torch.cat((inp[:,:,:,1:], 0*inp[:,:,:,-1:]), 3)
+	return Dx, Dy
+
+def gradientT_gpu(inp,out_type=2):
+	Dx = inp - torch.cat((inp[:,:,:1,:], inp[:,:,:-1,:]), 2)
+	Dy = inp - torch.cat((inp[:,:,:,:1], inp[:,:,:,:-1]), 3)
+	if out_type == 0:
+		return Dx
+	elif out_type == 1:
+		return Dy
+	else:
+		return Dx, Dy
+
 def fft_gpu(inp):
 	return torch.rfft(inp, signal_ndim=2, normalized=False, onesided=False)
 
 def ifft_gpu(inp):
 	return torch.irfft(inp, signal_ndim=2, normalized=False, onesided=False)
+
+def project2pyramid_gpu(M, F, eps, device):
+	## projection of (m,f) values to feasible "pyramid"-like intersection of convex sets (roughly all positive, m<=1, m>=f)
+	maxiter = 10 # number of whole cycles, 0=only positivity
+	mf = torch.cat((M,F),1).permute(0,2,3,1)
+	N = mf.shape[3] # number of conv sets
+	Z = torch.zeros(mf.shape+(N,)).float().to(device) # auxiliary vars (sth like projection residuals)
+	normal = np.array([-1,eps]) / np.sqrt(1 + eps**2) # dividing plane normal vector (for projection to oblique planes)
+
+	for iter in range(N*maxiter+1): # always end with projection to the first set
+		mf_old = mf
+		idx = np.mod(iter,N) # set index
+		if idx == 0: # projection to f>0, 0<m<1
+			mf += Z[:,:,:,:,0]
+			mf[mf < 0] = 0 # f,m > 0
+			mf[:,:,:,0][mf[:,:,:,0] > 1] = 1 # m < 1
+		else: # one of the oblique sets
+			mf += Z[:,:,:,:,idx]
+			W = mf[:,:,:,idx]*eps > mf[:,:,:,0] # points outside of C_idx			
+			proj = mf[:,:,:,0][W] * normal[0] + mf[:,:,:,idx][W] * normal[1] # projection to normal direction
+			mf[:,:,:,0][W] -= (normal[0] * proj)
+			mf[:,:,:,idx][W] -= (normal[1] * proj)
+		Z[:,:,:,:,idx] = mf_old + Z[:,:,:,:,idx] - mf # auxiliaries
+	return mf[:,:,:,:1].permute(0,3,1,2), mf[:,:,:,1:].permute(0,3,1,2)
+
+def lp_proximal_mapping_gpu(val_norm, amount, p, device):
+	## helper function for vector version of soft thresholding for l1 (lp) minimization
+	shrink_factor = torch.zeros_like(val_norm).float().to(device)
+	if p == 1: ## soft thresholding
+		nz = (val_norm > amount)
+		shrink_factor[nz] = (val_norm[nz]-amount) / val_norm[nz]
+	else:
+		raise Exception('not implemented!')
+	return shrink_factor
 
 def proj2simplex_gpu(Y, rgnA):
 	## euclidean projection of a batch of y to a simplex defined as x>=0 and sum(x(:)) = 1
@@ -257,6 +304,6 @@ def psfshift_gpu(H, usize, device):
 def ipsfshift_gpu(H, hsize):
 	## IPSFSHIFT Performs the inverse of 'psfshift' + crops PSF to desired size.
 	shift = tuple((np.ceil((np.array(hsize[2:])+1)/2) - 1).astype(int))
-	Hr = np.roll(H, shifts=shift, dims=(2,3))
+	Hr = torch.roll(H, shifts=shift, dims=(2,3))
 	Hc = Hr[:,:,:hsize[2], :hsize[3]]
 	return Hc

@@ -27,6 +27,12 @@ def imshow_nodestroy(im, inter=1):
 
 
 def imshow(im, wkey=0, inter=1):
+	if type(im) != np.ndarray:
+		im = im.data.cpu().detach().numpy()
+		if len(im.shape) == 4:
+			im = im[0,:,:,:]
+		im = im.transpose(1,2,0)
+
 	if inter == 1:
 		cv2.imshow('image',im), cv2.waitKey(int(np.round(wkey*1000))), cv2.destroyAllWindows() 
 	else:
