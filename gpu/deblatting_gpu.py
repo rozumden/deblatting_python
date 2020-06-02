@@ -8,17 +8,65 @@ from gpu.torch_cg import *
 
 import torch
 
-def estimateFM_gpu(Ic, Bc, Hc, Mc=None, Fc=None, params=None):
+def estimateFMH_gpu(Ic,Bc,Mc=None,Fc=None):
+	## Estimate F,M,H in FMO equation I = H*F + (1 - H*M)B, where * is convolution
+	device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+	print(device)
+	I = torch.from_numpy(Ic).float().to(device)
+	B = torch.from_numpy(Bc).float().to(device)
+	BS = I.shape[0]
+	if Mc is None:
+		Mc = np.ones(Ic.shape[:2])
+	if Fc is None:
+		Fc = np.ones((Mc.shape[0],Mc.shape[1],Ic.shape[1]))
+	M = torch.ones((BS,1,Mc.shape[0],Mc.shape[1])).float().to(device)
+	F = torch.ones((BS,3,Mc.shape[0],Mc.shape[1])).float().to(device)
+
+	H = 0
+	params = Params()
+	params.maxiter = 1
+	params.do_fit = 0 # not implemented
+	
+	rel_tol2 = params.rel_tol_h**2
+	stateh = StateH()
+	statefm = StateFM()
+	stateh.device = device
+	statefm.device = device
+
+	## blind loop, iterate over estimateFM and estimateH
+	for iter in range(params.loop_maxiter):
+		H_old = H
+		H, stateh = estimateH_gpu(I, B, M, F, state=stateh, params=params)
+		F, M, statefm = estimateFM_gpu(I, B, H, M, F, state=statefm, params=params)
+		rel_diff2 = ((H - H_old) ** 2).sum([2,3])/( H ** 2).sum([2,3])
+		if params.visualize:
+			bi = iter % BS
+			Fcpu = F[bi,:,:,:].data.cpu().detach().numpy().transpose(1,2,0)
+			Mcpu = M[bi,0,:,:].data.cpu().detach().numpy()
+			imshow_nodestroy(get_visim(H[bi,0,:,:].data.cpu().detach().numpy(),Fcpu,Mcpu,Ic[bi,:,:,:].transpose(1,2,0)), 600/np.max(I.shape))
+			# pdb.set_trace()
+		if params.verbose:
+			print("FMH: iter={}, reldiff_h={}".format(iter+1, torch.sqrt(torch.max(rel_diff2))))	
+		if (rel_diff2 < rel_tol2).all():
+			break
+
+	return H, F, M
+
+def estimateFM_gpu(Ic, Bc, Hc, Mc=None, Fc=None, state=None, params=None):
 	## Estimate F,M in FMO equation I = H*F + (1 - H*M)B, where * is convolution
 	## M is suggested to be specified to know approximate object size, at least as an array of zeros, for speed-up
 	if params is None:
 		params = Params()
 	params.lambda_R = 0 # not implemented
-	device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-	print(device)
-	I = torch.from_numpy(Ic).float().to(device)
-	B = torch.from_numpy(Bc).float().to(device)
-	H = torch.from_numpy(Hc).float().to(device)
+	if type(Ic) != np.ndarray: ## already in GPU
+		I = Ic; B = Bc; H = Hc
+		device = state.device
+	else:
+		device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+		print(device)
+		I = torch.from_numpy(Ic).float().to(device)
+		B = torch.from_numpy(Bc).float().to(device)
+		H = torch.from_numpy(Hc).float().to(device)
 	BS = I.shape[0]
 
 	if Mc is None:
@@ -27,36 +75,43 @@ def estimateFM_gpu(Ic, Bc, Hc, Mc=None, Fc=None, params=None):
 		else:
 			M = torch.zeros((BS,1,I.shape[2],I.shape[3])).float().to(device)
 	else:
-		M = torch.zeros((BS,1,Mc.shape[0],Mc.shape[1])).float().to(device)
+		if type(Mc) == np.ndarray:
+			M = torch.zeros((BS,1,Mc.shape[0],Mc.shape[1])).float().to(device)
+		else:
+			M = Mc
+
 	if Fc is None:
-		F = torch.zeros((BS,3,Mc.shape[0],Mc.shape[1])).float().to(device)
+		F = torch.zeros((BS,3,M.shape[2],M.shape[3])).float().to(device)
 	else:
-		F = torch.zeros((BS,3,Fc.shape[0],Fc.shape[1])).float().to(device)
+		if type(Fc) == np.ndarray:
+			F = torch.zeros((BS,3,Fc.shape[0],Fc.shape[1])).float().to(device)
+		else:
+			F = Fc
 
 	Fshape = F.shape[2:]+(3,)
 
-	Mask = psfshift_gpu(1-M,I.shape[2:],device) ## to limit the size of mask support
-	Mask4 = torch.cat((Mask,Mask,Mask,Mask),1)
-
 	## init
-	# Dx, Dy = createDerivatives0(Fshape)
-	# DTD = (Dx.T @ Dx) + (Dy.T @ Dy)
-	vx = torch.zeros_like(F).float().to(device) 
-	vy = torch.zeros_like(F).float().to(device) 
-	ay = torch.zeros_like(F).float().to(device)
-	ax = torch.zeros_like(F).float().to(device) ## v=Df splitting due to TV and its assoc. Lagr. mult.
-	vx_m = torch.zeros_like(M).float().to(device)
-	vy_m = torch.zeros_like(M).float().to(device)
-	ay_m = torch.zeros_like(M).float().to(device)
-	ax_m = torch.zeros_like(M).float().to(device) ## v_m=Dm splitting due to TV (m-part) and its assoc. Lagr. mult.
-	af = torch.zeros_like(F).float().to(device)
-	vf = torch.zeros_like(F).float().to(device) ## vf=f splitting due to positivity and f=0 outside mask constraint
-	am = torch.zeros_like(M).float().to(device)
-	vm = torch.zeros_like(M).float().to(device) ## vm=m splitting due to mask between [0,1]
-	if params.lambda_R > 0: 
-		RnA = createRnMatrix(Fshape[:2]).A
-		Rn = RnA.T @ RnA - RnA.T - RnA + np.eye(RnA.shape[0])
-		Rn = sparse.csc_matrix(Rn)
+	Mask4 = None
+	if state is not None:
+		vx = state.vx; vy = state.vy; ax = state.ax; ay = state.ay
+		vx_m = state.vx_m; vy_m = state.vy_m; ax_m = state.ax_m; ay_m = state.ay_m
+		vf = state.vf; af = state.af; vm = state.vm; am = state.am 
+		Mask4 = state.Mask4
+	if Mask4 is None:
+		Mask = psfshift_gpu(1-0*M,I.shape[2:],device) ## to limit the size of mask support
+		Mask4 = torch.cat((Mask,Mask,Mask,Mask),1)
+		vx = torch.zeros_like(F).float().to(device) 
+		vy = torch.zeros_like(F).float().to(device) 
+		ay = torch.zeros_like(F).float().to(device)
+		ax = torch.zeros_like(F).float().to(device) ## v=Df splitting due to TV and its assoc. Lagr. mult.
+		vx_m = torch.zeros_like(M).float().to(device)
+		vy_m = torch.zeros_like(M).float().to(device)
+		ay_m = torch.zeros_like(M).float().to(device)
+		ax_m = torch.zeros_like(M).float().to(device) ## v_m=Dm splitting due to TV (m-part) and its assoc. Lagr. mult.
+		af = torch.zeros_like(F).float().to(device)
+		vf = torch.zeros_like(F).float().to(device) ## vf=f splitting due to positivity and f=0 outside mask constraint
+		am = torch.zeros_like(M).float().to(device)
+		vm = torch.zeros_like(M).float().to(device) ## vm=m splitting due to mask between [0,1]
 
 	fH = fft_gpu(H) # precompute FT
 	HT = cconj(fH) 
@@ -114,8 +169,6 @@ def estimateFM_gpu(Ic, Bc, Hc, Mc=None, Fc=None, params=None):
 			bHM = B*ifft_gpu(cmul(fH,fft_gpu(Me)))
 			yf = params.gamma*ifft_gpu(cmul(HT, (HF - fft_gpu(bHM))))
 			ym = params.gamma*ifft_gpu(cmul(HT,fft_gpu((B*(bHM - ifft_gpu(HF))).sum(1,True))))
-			if params.lambda_R > 0: 
-				ym = ym + params.lambda_R*(Rn @ xm) # mask regularizers
 			fmx, fmy = gradient_gpu(ipsfshift_gpu(fmfun0, F.shape))
 			DTD = psfshift_gpu(gradientT_gpu(fmx,0) + gradientT_gpu(fmy,1),I.shape[2:],device)
 			res = torch.cat((yf,ym),1) + beta_tv4*DTD + params.beta_fm*fmfun0 # common regularizers/identity terms
@@ -126,6 +179,8 @@ def estimateFM_gpu(Ic, Bc, Hc, Mc=None, Fc=None, params=None):
 		fm = ipsfshift_gpu(FM, F.shape)
 		F = fm[:,:Fshape[2],:,:]
 		M = fm[:,-1:,:,:]
+		if state is not None:
+			continue
 
 		rel_diff2_f = ((F - F_old) ** 2).sum([1,2,3])/( F ** 2).sum([1,2,3])
 		rel_diff2_m = ((M - M_old) ** 2).sum([1,2,3])/( M ** 2).sum([1,2,3])
@@ -139,39 +194,59 @@ def estimateFM_gpu(Ic, Bc, Hc, Mc=None, Fc=None, params=None):
 		if params.verbose:
 			print("FM: iter={}, reldiff=({}, {})".format(iter, torch.sqrt(torch.max(rel_diff2_f)), torch.sqrt(torch.max(rel_diff2_m))))	
 
-		if rel_diff2_f < rel_tol2 and rel_diff2_m < rel_tol2:
+		if (rel_diff2_f < rel_tol2).all() and (rel_diff2_m < rel_tol2).all():
 			break
 
-	return F, M
+	if state is None:
+		return F, M
+	else:
+		state.vx = vx; state.vy = vy; state.ax = ax; state.ay = ay
+		state.vx_m = vx_m; state.vy_m = vy_m; state.ax_m = ax_m; state.ay_m = ay_m
+		state.vf = vf; state.af = af; state.vm = vm; state.am = am 
+		state.Mask4 = Mask4
+		return F,M,state
 
-
-def estimateH_gpu(Ic, Bc, Mc, Fc, params=None):
+def estimateH_gpu(Ic, Bc, Mc, Fc, state=None, params=None):
 	## Estimate H in FMO equation I = H*F + (1 - H*M)B, where * is convolution
 	## dimensions: batch, channels, H, W
 	## Hmask represents a region in which computations are done
 	if params is None:
 		params = Params()
-	device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-	print(device)
-	if len(Ic.shape) == 3:
-		I = torch.from_numpy(Ic[:,:,:,np.newaxis]).float().to(device).permute([3,2,0,1])
-		B = torch.from_numpy(Bc[:,:,:,np.newaxis]).float().to(device).permute([3,2,0,1])
-		M = torch.from_numpy(Mc[:,:,np.newaxis,np.newaxis]).float().to(device).permute([3,2,0,1])
-		F = torch.from_numpy(Fc[:,:,:,np.newaxis]).float().to(device).permute([3,2,0,1])
-	elif len(Ic.shape) == 4: # valid input
-		I = torch.from_numpy(Ic).float().to(device)
-		B = torch.from_numpy(Bc).float().to(device)
-		M = torch.from_numpy(Mc).float().to(device)
-		F = torch.from_numpy(Fc).float().to(device)
+	if type(Ic) != np.ndarray: ## already in GPU
+		I = Ic; B = Bc; M = Mc; F = Fc
+		device = state.device
 	else:
-		print('Not valid input')
-		return
+		device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+		print(device)
+		if len(Ic.shape) == 3:
+			I = torch.from_numpy(Ic[:,:,:,np.newaxis]).float().to(device).permute([3,2,0,1])
+			B = torch.from_numpy(Bc[:,:,:,np.newaxis]).float().to(device).permute([3,2,0,1])
+			M = torch.from_numpy(Mc[:,:,np.newaxis,np.newaxis]).float().to(device).permute([3,2,0,1])
+			F = torch.from_numpy(Fc[:,:,:,np.newaxis]).float().to(device).permute([3,2,0,1])
+		elif len(Ic.shape) == 4: # valid input
+			I = torch.from_numpy(Ic).float().to(device)
+			B = torch.from_numpy(Bc).float().to(device)
+			M = torch.from_numpy(Mc).float().to(device)
+			F = torch.from_numpy(Fc).float().to(device)
+		else:
+			print('Not valid input')
+			return
+
 	BS = I.shape[0]
 
-	H = torch.zeros((BS,1,I.shape[2],I.shape[3])).float().to(device)
-	v_lp = torch.zeros_like(H).float().to(device)
-	a_lp = torch.zeros_like(H).float().to(device)
-	rgnA = torch.arange(1,I.shape[2]*I.shape[3]+1).float().to(device)
+	H = None
+	if state is not None:
+		H = state.H
+		v_lp = state.v_lp
+		a_lp = state.a_lp
+		rgnA = state.rgnA
+
+	if H is None:
+		H = torch.zeros((BS,1,I.shape[2],I.shape[3])).float().to(device)
+		v_lp = torch.zeros_like(H).float().to(device)
+		a_lp = torch.zeros_like(H).float().to(device)
+		rgnA = torch.arange(1,I.shape[2]*I.shape[3]+1).float().to(device)
+
 	hsize = I.shape[2:]
 	
 	iF = fft_gpu(psfshift_gpu(F, hsize, device))
@@ -203,6 +278,10 @@ def estimateH_gpu(Ic, Bc, Mc, Fc, params=None):
 			return params.gamma*ifft_gpu(term).sum(1,True) + params.beta_h*hfun
 
 		H, info = cg_batch(A_bmm, rhs, X0=H, rtol=params.cg_tol, maxiter=params.cg_maxiter)
+		
+		if state is not None:
+			continue
+
 		rel_diff2 = ((H - H_old) ** 2).sum([2,3])/( H ** 2).sum([2,3])
 
 		if params.visualize:
@@ -213,7 +292,14 @@ def estimateH_gpu(Ic, Bc, Mc, Fc, params=None):
 		if (rel_diff2 < rel_tol2).all():
 			break
 
-	return H.data.cpu().detach().numpy()[:,0,:,:].transpose(1,2,0)
+	if state is None:
+		return H
+	else:
+		state.a_lp = a_lp
+		state.v_lp = v_lp
+		state.H = H
+		state.rgnA = rgnA
+		return H, state
 
 def gradient_gpu(inp):
 	Dx = inp - torch.cat((inp[:,:,1:,:], 0*inp[:,:,-1:,:]), 2)

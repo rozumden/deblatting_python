@@ -560,6 +560,8 @@ class StateH:
 		self.H = None
 		self.a_lp = 0
 		self.v_lp = 0
+		self.rgnA = 0
+		self.device = None
 
 class StateFM:
 	def __init__(self):
@@ -584,3 +586,5 @@ class StateFM:
 		self.ac = 0
 		self.vc_m = 0
 		self.ac_m = 0
+		self.Mask4 = None
+		self.device = None
