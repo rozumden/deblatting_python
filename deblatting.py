@@ -37,8 +37,10 @@ class Params:
 		self.do_cost = False #!
 		self.visualize = True #!
 
-def estimateFMH(I,B,M=None,F=None,Hmask=None):
+def estimateFMH(I,B,M=None,F=None,Hmask=None,params=None):
 	## Estimate F,M,H in FMO equation I = H*F + (1 - H*M)B, where * is convolution
+	if params is None:
+		params = Params()
 	if I.shape != B.shape:
 		raise Exception('Shapes must be equal!')
 	if M is None:
@@ -56,7 +58,6 @@ def estimateFMH(I,B,M=None,F=None,Hmask=None):
 		Hmask_small = Hmask[rmin:rmax,cmin:cmax]
 
 	H = np.zeros(I.shape[:2])
-	params = Params()
 	params.maxiter = 1
 	rel_tol2 = params.rel_tol_h**2
 	stateh = StateH()

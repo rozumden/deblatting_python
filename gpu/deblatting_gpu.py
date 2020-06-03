@@ -8,8 +8,10 @@ from gpu.torch_cg import *
 
 import torch
 
-def estimateFMH_gpu(Ic,Bc,Mc=None,Fc=None):
+def estimateFMH_gpu(Ic,Bc,Mc=None,Fc=None,params=None):
 	## Estimate F,M,H in FMO equation I = H*F + (1 - H*M)B, where * is convolution
+	if params is None:
+		params = Params()
 	device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 	print(device)
 	I = torch.from_numpy(Ic).float().to(device)
@@ -23,7 +25,6 @@ def estimateFMH_gpu(Ic,Bc,Mc=None,Fc=None):
 	F = torch.ones((BS,3,Mc.shape[0],Mc.shape[1])).float().to(device)
 
 	H = 0
-	params = Params()
 	params.maxiter = 1
 	params.do_fit = 0 # not implemented
 	
