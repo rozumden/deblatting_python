@@ -13,7 +13,7 @@ The library is written in Python. The following packages are required: `numpy, s
 
 Using
 -----
-All parameters are explained in `Params()` class. Provided script `run.py` shows examples how to use the methods.
+All parameters are explained in `Params()` class. Provided script `run.py` shows examples how to use the methods. For GPU version in PyTorch check `run_gpu.py`.
 ### Estimate F, M, H
 The most general case is when everything needs to be estimated. In this case it is advisable to provide at least an approximate object size, e.g. by `M0 = np.ones([diameter]*2)`. Otherwise an object of `I.shape` is being estimated, which can be slow. For speed up, inputs can be cropped to the area near the object of interest, or `Hmask` can be provided as a binary mask in the input image where the object is present.
 ```python
@@ -51,8 +51,16 @@ Fs, Ms = estimateFM_pw(I, B, Hs, Ms0)
 ```
 <img src="imgs/pw_ms.gif" width="500">
 
-### GPU versions under development 
-Only `H`-estimation is implemented so far. Requires PyTorch.
+### GPU version in PyTorch
+Input data must be 4-D in format (K,C,W,H), where K is the number of images in a batch, C is the number of channels, and W/H are image width and height. The output will be in the same format, and each image in the batch is processed in parallel.
+
+```python
+H, F, M = estimateFMH_gpu(I, B, M0)
+```
+
+```python
+F, M = estimateFM_gpu(I, B, H)
+```
 
 ```python
 H = estimateH_gpu(I, B, M, F)
