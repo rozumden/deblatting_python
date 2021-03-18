@@ -66,6 +66,11 @@ F, M = estimateFM_gpu(I, B, H)
 H = estimateH_gpu(I, B, M, F)
 ```
 
+Benchmarking
+------------
+Evaluation on real-world data can be performed on the [FMO deblurring benchmark](https://github.com/rozumden/fmo-deblurring-benchmark).
+
+
 Publications
 ------------
 This repository contains implementation of the following publications:
