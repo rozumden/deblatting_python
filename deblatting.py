@@ -84,14 +84,14 @@ def estimateFMH(I,B,M=None,F=None,Hmask=None,params=None):
 	He[Hmask] = H[Hmask_small]
 	return He, F, M
 
-def psffit(H):
+def psffit(H,returnpars=False):
 	## very simple version of PSF fitting
 	## there are more sophisticated ways to do it with RANSAC
 	bH = (H/np.max(H) > 0.4)
 	x, y = np.nonzero(bH)
 	res1 = np.polyfit(x, y, 3, full=True)
 	res2 = np.polyfit(y, x, 3, full=True)
-	if res1[1][0] < res2[1][0]:
+	if res2[1].shape[0] == 0 or (res1[1].shape[0] != 0 and res1[1][0] < res2[1][0]):
 		coeffs = res1[0]
 		xs = [np.min(x), np.max(x)]
 		poly1d_fn = np.poly1d(coeffs) 
@@ -105,6 +105,8 @@ def psffit(H):
 	pars = np.array([[xs[0], ys[0]], [xs[1]-xs[0], ys[1]-ys[0]]]).T
 	Hf = renderTraj(pars, np.zeros(H.shape))
 	Hf /= np.sum(Hf)
+	if returnpars:
+		return Hf, pars
 	return Hf
 
 def estimateFM(I, B, H, M=None, F=None, F_T=None, M_T=None, state=None, params=None):

@@ -13,7 +13,7 @@ def estimateFMH_gpu(Ic,Bc,Mc=None,Fc=None,params=None):
 	if params is None:
 		params = Params()
 	device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-	print(device)
+	# print(device)
 	I = torch.from_numpy(Ic).float().to(device)
 	B = torch.from_numpy(Bc).float().to(device)
 	BS = I.shape[0]

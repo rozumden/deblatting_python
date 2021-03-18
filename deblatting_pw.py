@@ -38,6 +38,7 @@ def estimateFM_pw(I, B, H, M=None, F=None, F_T=None, M_T=None, state=None, param
 		F = np.zeros((M.shape[0],M.shape[1],3,ns))
 	single_m = (M.shape[3] == 1)
 	Fshape = F.shape
+	Mshape = M.shape
 	f = vec3(F)
 	m = vec3(M)
 	if F_T is not None:
@@ -257,7 +258,7 @@ def estimateFM_pw(I, B, H, M=None, F=None, F_T=None, M_T=None, state=None, param
 			break
 
 	f_img = ivec3(f, Fshape)
-	m_img = ivec3(m, Fshape[:2])
+	m_img = ivec3(m, Mshape)
 	if state is None:
 		return f_img,m_img
 	else:
