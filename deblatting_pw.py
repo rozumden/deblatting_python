@@ -288,7 +288,7 @@ def psfsplit(H, ns):
 	x, y = np.nonzero(bH)
 	res1 = np.polyfit(x, y, 3, full=True)
 	res2 = np.polyfit(y, x, 3, full=True)
-	if res1[1][0] < res2[1][0]:
+	if res2[1].shape[0] == 0 or (res1[1].shape[0] != 0 and res1[1][0] < res2[1][0]):
 		coeffs = res1[0]
 		xs = [np.min(x), np.max(x)]
 		poly1d_fn = np.poly1d(coeffs) 
