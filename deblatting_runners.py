@@ -56,6 +56,10 @@ def deblatting_runner(imr,bgrr,nsplits,debl_dim):
 		while pcd % 2 == 0 and pcd > 0: pcd = pcd // 2 
 		red_nsplits = pcd*int(np.min([nsplits/pcd, np.max([1,2**int(np.log2(mynorm))])]))
 	Hs = psfsplit(Hc,red_nsplits)
+	if Hs.sum(0).sum(0).min() == 0: ## hack: the blur kernel is complete noise -> fitted curve outside the image dimension
+		red_nsplits = 1
+		Hs = psfsplit(Hc,red_nsplits)
+
 	Fs,Ms = estimateFM_pw(imr,bgrr,Hs,np.zeros(tuple(debl_dim)+(red_nsplits,)), params=params)
 	inds = np.repeat(range(red_nsplits), int(nsplits/red_nsplits))
 	Hs = Hs[:,:,inds]
@@ -66,7 +70,10 @@ def deblatting_runner(imr,bgrr,nsplits,debl_dim):
 	est_traj = np.zeros((2,nsplits))
 	timestamps = np.linspace(0,1,nsplits)
 	for ki in range(nsplits): 
-		Hsc = Hs[:,:,ki]/np.sum(Hs[:,:,ki])
+		if np.sum(Hs[:,:,ki]) > 0:
+			Hsc = Hs[:,:,ki]/np.sum(Hs[:,:,ki])
+		else:
+			Hsc = Hs[:,:,ki]
 		est_hs_tbd[:,:,:,ki] = fmo_model(bgrr,Hsc,Fc,Mc)
 		est_hs_tbd3d[:,:,:,ki] = fmo_model(bgrr,Hsc,Fs[:,:,:,ki],Ms[:,:,0,ki])
 		est_traj[:,ki] = pars[:,0] + timestamps[ki]*pars[:,1]
