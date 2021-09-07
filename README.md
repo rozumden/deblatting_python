@@ -1,4 +1,4 @@
-# Deblatting in Python
+# [IJCV 2021] Deblatting in Python
 Python implementation of deblatting (*debl*urring and m*atting*). We assume the following formation model of input image `I`:
 
 <img src="imgs/fmo_model.png" width="500">
