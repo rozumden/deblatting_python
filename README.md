@@ -76,6 +76,14 @@ Publications
 This repository contains implementation of the following publications:
 
 ```bibtex
+@inproceedings{Rozumnyi-et-al-IJCV-2021,
+  author = {Denys Rozumnyi and Jan Kotera and Filip Sroubek and Jiri Matas},
+  title = {Tracking by Deblatting},
+  booktitle = {IJCV},
+  doi = {10.1007/s11263-021-01480-w},
+  month = jun,
+  year = {2021}
+}
 @inproceedings{Rozumnyi-et-al-CVPR-2020,
   author = {Denys Rozumnyi and Jan Kotera and Filip Sroubek and Jiri Matas},
   title = {Sub-frame Appearance and 6D Pose Estimation of Fast Moving Objects},
